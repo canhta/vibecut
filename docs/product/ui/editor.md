@@ -86,9 +86,9 @@ noncomparable rather than a metric pass.
 
 Move and resize stage the group move and trim contract candidate: the timeline paints `preview_project()` while the committed project stays untouched, and one drop publishes a single undo step. Escape or a refusal discards the candidate.
 
-- A move drop highlights the landing row with a 2 px accent outline on a 10 % accent wash, or draws a 2 px accent insertion line with an 8×4 left cap between lanes; the line marks the track a release creates. [proposed]
-- A refused move or trim shows the engine's reason in an 11 px warning pill at the bottom-left of the lanes, 1 px warning outline on the panel fill, above the scrollbar. [proposed]
-- A main-track item at the timeline origin is pinned: a 3 px accent edge marks the pinned start beside the left trim handle, and its tooltip explains the pin. [proposed]
+- Move feedback (CapCut 9.7.1, `capcut-desktop-2026-11-14b` frames 102933, 102949; measured at 2x): the dragged clip keeps its row and wears a 3 px white outline. Over a compatible row the landing row shows a clip-length slot: fill `#3a3a3a` with a 1 px `#434343` edge, inset 3 px from the row's top and bottom (row 80, slot 74), no text. Between lanes a 2 px full-width line in the video clip fill (`#204c51`) marks the track a release creates; no cap, no wash. The light theme slot colours are unmeasured [proposed] (panel field and border tokens).
+- A refused move or trim shows the engine's reason in an 11 px warning pill at the bottom-left of the lanes, 1 px warning outline on the panel fill, above the scrollbar. [proposed] Deliberate difference: the reference shows no hint for a refused trim (frames 103022-103033); we keep the pill so a refusal is never silent.
+- A main-track item at the timeline origin is not pinned: dragged right it leaves a grey placeholder (the slot above) from 0 to its new left edge and the other items stay (frame 103040). It cannot move before 0. The engine's move leaves the gap whatever the main-track magnet says; the magnet closes only the gaps of delete and split ([keyboard](../agent-control/keyboard.md)).
 
 ## Marker editor
 

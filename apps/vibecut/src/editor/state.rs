@@ -128,8 +128,6 @@ pub struct Inspection {
     pub timeline_refusal: Option<String>,
     /// Landing hint for a move drag (`track:N`, `insert_above:N`, `insert_below:N`).
     pub drop_zone: Option<String>,
-    /// Main-track items pinned at the timeline origin.
-    pub pinned: Vec<ItemId>,
     pub ripple: bool,
     pub preview_zoom: f32,
     pub preview_fit: bool,

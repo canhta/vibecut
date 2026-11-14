@@ -164,6 +164,6 @@
 
 Every project mutation uses its engine command id (`vibecut-cli commands --json` lists the schemas). UI-only actions stay app-owned.
 
-With the main track magnet on (the default), Delete and Split and remove left or right (`Q`, `W`) on a main-track clip close the gap they leave on the main track in the same undo step; a linked clip on another track closes its own gap, and other tracks do not move. With the magnet off, and no ripple enabled, the gap stays.
+With the main track magnet on (the default), Delete and Split and remove left or right (`Q`, `W`) on a main-track clip close the gap they leave on the main track in the same undo step; a linked clip on another track closes its own gap, and other tracks do not move. With the magnet off, and no ripple enabled, the gap stays. Dragging a main-track clip never closes or pins anything: the first clip moved right leaves its gap from 0 with the magnet on or off.
 
 Bindings persist in the app preference store. A recorded chord is refused when another action already uses it; resetting an action removes its `isCustomized` marker. A binding profile with an unsupported format or version is refused with a typed diagnostic.

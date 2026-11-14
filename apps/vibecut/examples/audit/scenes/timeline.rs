@@ -512,6 +512,15 @@ pub(super) fn scene_delete(theme: Theme, scale: f32) -> Result<AppHarness, Failu
 }
 
 pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    placement_drag(theme, scale, false)
+}
+
+/// The placement drag held between lanes: the thin insertion line and the white-outlined clip.
+pub(super) fn placement_line(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    placement_drag(theme, scale, true)
+}
+
+fn placement_drag(theme: Theme, scale: f32, held: bool) -> Result<AppHarness, Failure> {
     let mut session = empty_session("Placement")?;
     for (id, kind) in [(1, StreamKind::Video), (2, StreamKind::Audio)] {
         session.apply(Command::AddAsset {
@@ -597,6 +606,11 @@ pub(super) fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure>
     app.run_steps(1);
     app.hover_at(target);
     app.run_steps(2);
+    if held {
+        // The pointer stays down so the capture shows the mid-drag feedback.
+        widget_rect(&app, "timeline.drop.line")?;
+        return Ok(app);
+    }
     app.drop_at(target);
     app.run_steps(2);
     let after = app

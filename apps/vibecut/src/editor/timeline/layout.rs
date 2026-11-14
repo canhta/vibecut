@@ -60,8 +60,6 @@ pub(super) struct ItemView {
     pub(super) volume: Option<f32>,
     /// Audible clip fades; `None` for items that cannot carry them.
     pub(super) fades: Option<project::Fades>,
-    /// Main-track item at the timeline origin: its start cannot move left.
-    pub(super) pinned: bool,
     pub(super) lanes: Vec<ItemLane>,
 }
 #[derive(Clone, Debug)]
@@ -145,8 +143,6 @@ struct RawItem {
     volume: Option<f32>,
     fades: Option<project::Fades>,
     channels: Vec<ChannelLane>,
-    /// Main-track item at the timeline origin: its start cannot move left.
-    pinned: bool,
 }
 struct ChannelLane {
     path: project::AnimationPath,
@@ -296,7 +292,6 @@ impl State {
                     volume,
                     fades,
                     channels,
-                    pinned: main && item.start == Tick::ZERO,
                 });
             }
             rows.push(TrackRow {
@@ -375,7 +370,6 @@ impl State {
                 muted: raw.muted,
                 volume: raw.volume,
                 fades: raw.fades,
-                pinned: raw.pinned,
                 lanes,
             });
         }

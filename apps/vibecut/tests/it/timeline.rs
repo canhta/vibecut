@@ -3025,6 +3025,11 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
         };
         assert_eq!(staged.drop_zone.as_deref(), Some(zone.as_str()));
         assert!(staged.preview.is_some(), "the drop zone stages a candidate");
+        if edge.is_some() {
+            widget(&h, "timeline.drop.line");
+        } else {
+            widget(&h, &format!("timeline.drop.slot.{}", moving.0));
+        }
         h.drop_at(target);
         h.run_steps(2);
         let after = h.state().session.project().clone();
@@ -3333,7 +3338,7 @@ fn a_refused_group_move_shows_the_reason_and_discards_the_preview() {
 }
 
 #[test]
-fn a_main_track_item_at_the_origin_is_pinned_and_cannot_move_left() {
+fn a_main_track_item_at_the_origin_is_not_pinned_and_leaves_a_placeholder_when_moved_right() {
     let mut session =
         Session::new(Project::empty(ProjectId(125), "Pinned".into()).unwrap(), 20).unwrap();
     let main = session.project().data().scene().timeline.main.id;
@@ -3359,8 +3364,24 @@ fn a_main_track_item_at_the_origin_is_pinned_and_cannot_move_left() {
     let history = editor.session.history_len();
     let mut h = harness(editor);
     h.run_steps(3);
-    assert!(h.state().inspect().unwrap().pinned.contains(&item_id));
-    widget(&h, &format!("timeline.item.{}.pinned", item_id.0));
+    let body = widget(&h, &format!("timeline.item.{}", item_id.0));
+    // Moving right mid-drag paints the grey placeholder from the origin; the white outline
+    // is painted on the dragged clip and no pin marker exists.
+    h.drag_at(body.center());
+    h.run_steps(1);
+    h.hover_at(body.center() + egui::vec2(120.0, 0.0));
+    h.run_steps(2);
+    let placeholder = widget(&h, "timeline.drop.placeholder");
+    assert!(placeholder.width() > 0.0 && placeholder.left() <= body.left() + 1.0);
+    h.drop_at(body.center() + egui::vec2(120.0, 0.0));
+    h.run_steps(2);
+    assert!(
+        item(h.state(), item_id).start > Tick::ZERO,
+        "the first main-track item leaves 0 and the gap stays"
+    );
+    assert_eq!(h.state().session.history_len(), history + 1);
+    h.state_mut().session.undo().unwrap();
+    h.run_steps(2);
     let body = widget(&h, &format!("timeline.item.{}", item_id.0));
     drag(
         &mut h,
@@ -3370,7 +3391,7 @@ fn a_main_track_item_at_the_origin_is_pinned_and_cannot_move_left() {
     assert_eq!(
         item(h.state(), item_id).start,
         Tick::ZERO,
-        "the main track's first item stays pinned at the origin"
+        "no item moves before the timeline origin"
     );
     assert_eq!(h.state().session.history_len(), history);
 }
