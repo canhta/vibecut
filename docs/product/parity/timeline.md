@@ -28,7 +28,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | TL-19 | Main track magnet | Done | Proposed | 14b/110530 | Key P |
 | TL-20 | Auto snapping | Done | Matches | 14b/110530 | |
 | TL-21 | Linkage switch | Missing | — | 14b/110530 | No link model |
-| TL-22 | Preview axis | Done | Matches | web flows/08 | |
+| TL-22 | Preview axis | Done | Matches | web flows/08 | A transport step ends the hover until the pointer moves |
 | TL-23 | Zoom out, slider, in | Done | Matches | 05/221643 | |
 | TL-24 | Zoom to fit timeline | Partial | — | 14b/110530 | Key Shift+Z; no toolbar button measured |
 | TL-25 | Hide / show timeline | Missing | — | web flows/12 | Web-only evidence |

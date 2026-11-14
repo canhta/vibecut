@@ -232,6 +232,8 @@ pub(in crate::editor) struct State {
     pub(in crate::editor::timeline) snap_indicator: Option<Tick>,
     /// Preview-axis pointer time; transient and never part of the project.
     pub(in crate::editor::timeline) hover: Option<Tick>,
+    /// A transport move set the playhead: no hover time until the pointer moves or presses.
+    pub(in crate::editor::timeline) hover_held: bool,
     pub(in crate::editor::timeline) marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
     /// The track and time a row menu was opened at, fixed by the right click.
     pub(in crate::editor::timeline) row_menu_target: Option<(TrackId, Tick)>,
@@ -283,6 +285,7 @@ impl State {
             graph_popover: None,
             snap_indicator: None,
             hover: None,
+            hover_held: false,
             marquee: None,
             row_menu_target: None,
             track_rename: None,
@@ -330,6 +333,11 @@ impl State {
     /// The pointer time the preview axis currently shows, if any.
     pub(in crate::editor) fn hover_time(&self) -> Option<Tick> {
         self.hover
+    }
+    /// Drop the hover time and keep it dropped until the pointer moves.
+    pub(in crate::editor) fn hold_hover(&mut self) {
+        self.hover = None;
+        self.hover_held = true;
     }
     pub(in crate::editor) fn clear_hover(&mut self) {
         self.hover = None;

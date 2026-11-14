@@ -437,32 +437,18 @@ impl Editor {
                 UiAction::Pause => self
                     .playback
                     .transport(Transport::Pause, self.session.project().clone())?,
-                UiAction::BackSecond => self
-                    .playback
-                    .transport(Transport::BackSecond, self.session.project().clone())?,
-                UiAction::ForwardSecond => self
-                    .playback
-                    .transport(Transport::ForwardSecond, self.session.project().clone())?,
-                UiAction::FrameBack => self
-                    .playback
-                    .transport(Transport::FrameBack, self.session.project().clone())?,
-                UiAction::FrameForward => self
-                    .playback
-                    .transport(Transport::FrameForward, self.session.project().clone())?,
-                UiAction::StepBackMany => self.playback.transport(
-                    Transport::StepBack(self.preferences.frame_step),
-                    self.session.project().clone(),
-                )?,
-                UiAction::StepForwardMany => self.playback.transport(
-                    Transport::StepForward(self.preferences.frame_step),
-                    self.session.project().clone(),
-                )?,
-                UiAction::Start => self
-                    .playback
-                    .transport(Transport::Start, self.session.project().clone())?,
-                UiAction::End => self
-                    .playback
-                    .transport(Transport::End, self.session.project().clone())?,
+                UiAction::BackSecond => self.move_playhead(Transport::BackSecond)?,
+                UiAction::ForwardSecond => self.move_playhead(Transport::ForwardSecond)?,
+                UiAction::FrameBack => self.move_playhead(Transport::FrameBack)?,
+                UiAction::FrameForward => self.move_playhead(Transport::FrameForward)?,
+                UiAction::StepBackMany => {
+                    self.move_playhead(Transport::StepBack(self.preferences.frame_step))?
+                }
+                UiAction::StepForwardMany => {
+                    self.move_playhead(Transport::StepForward(self.preferences.frame_step))?
+                }
+                UiAction::Start => self.move_playhead(Transport::Start)?,
+                UiAction::End => self.move_playhead(Transport::End)?,
                 UiAction::Undo | UiAction::Redo => {
                     let preference_changed = if action == UiAction::Undo {
                         self.frame.preference_history.undo(&mut self.preferences)
@@ -656,6 +642,16 @@ impl Editor {
 impl Editor {
     /// Open the keyframe lanes of every selected item, or close them when all are open.
     /// The open set is presentation state, persisted for the owning project.
+    /// A transport move that sets the playhead: the counter must show it, so a pointer
+    /// resting on the timeline stops standing for the preview time until it moves again.
+    fn move_playhead(&mut self, transport: Transport) -> Result<()> {
+        self.playback
+            .transport(transport, self.session.project().clone())?;
+        self.timeline.hold_hover();
+        self.playback.set_hover(None)?;
+        Ok(())
+    }
+
     fn toggle_keyframe_lanes(&mut self) -> Result<()> {
         let items: Vec<ItemId> = self.selection().iter().copied().collect();
         if items.is_empty() {

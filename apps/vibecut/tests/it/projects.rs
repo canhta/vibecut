@@ -1129,3 +1129,30 @@ fn workspace_home_raw_text_clipboard_routes_into_the_real_search_field() {
         [ProjectId(2)]
     );
 }
+
+#[test]
+fn leaving_a_project_shows_its_new_cover_on_home_without_input_when_woken() {
+    // Bound before the workspace starts any worker, as the app does.
+    let woken = crate::woken::Woken::bind();
+    let fixture = Fixture::new(&[("Cover", Thumbnail::Missing)]);
+    customize(&fixture.path(0), Thumbnail::Missing, TICKS_PER_SECOND);
+    let mut harness = fixture.build(Preferences::default());
+    woken.attach(&harness.ctx);
+    harness.state_mut().open(fixture.path(0)).unwrap();
+    woken.step_until(&mut harness, "the project opens", |app| {
+        app.focused_editor().is_some() && !app.busy()
+    });
+    // File > Exit project: the cover is rendered, the window closes and Home relists. No
+    // input arrives from here on; every Home pass runs only because something woke the loop.
+    harness
+        .state_mut()
+        .focused_window_mut()
+        .unwrap()
+        .request_close();
+    woken.step_until(&mut harness, "Home shows the new cover", |app| {
+        app.windows.is_empty()
+            && !app.busy()
+            && matches!(app.projects.entries()[0].thumbnail, Thumbnail::Ready { .. })
+    });
+    assert!(harness.state().home_open());
+}

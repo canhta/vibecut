@@ -25,6 +25,9 @@ mod mac {
         /// The bar in use and what it was built from; a new language or chord rebuilds it.
         installed: Option<(muda::Menu, Vec<String>)>,
         failed: Vec<String>,
+        /// Clicks queued by the bar's handler, which wakes the loop: a click is no window event,
+        /// so an idle loop would otherwise run it only at the next input.
+        clicks: Option<std::sync::mpsc::Receiver<MenuEvent>>,
     }
 
     impl Menu {
@@ -53,6 +56,12 @@ mod mac {
             {
                 return;
             }
+            if self.clicks.is_none() {
+                let send = self.open_clicks();
+                MenuEvent::set_event_handler(Some(move |event| {
+                    let _ = send.send(event);
+                }));
+            }
             match build(locale, keys) {
                 Ok(menu) => self.installed = Some((menu, signature)),
                 Err(error) => {
@@ -63,10 +72,17 @@ mod mac {
             }
         }
 
+        /// The queue clicks arrive on; its sender wakes the loop bound to the calling thread.
+        pub(super) fn open_clicks(&mut self) -> wake::Sender<MenuEvent> {
+            let (send, receive) = wake::channel();
+            self.clicks = Some(receive);
+            send
+        }
+
         /// The rows clicked since the last call.
         pub(in crate::app) fn take(&mut self) -> Vec<Entry> {
             let mut clicked = Vec::new();
-            while let Ok(event) = MenuEvent::receiver().try_recv() {
+            while let Some(Ok(event)) = self.clicks.as_ref().map(|clicks| clicks.try_recv()) {
                 let id = event.id.as_ref();
                 if id == HOME {
                     clicked.push(Entry::Home);
@@ -163,5 +179,34 @@ mod mac {
         }
         bar.init_for_nsapp();
         Ok(bar)
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    #[test]
+    fn a_menu_click_wakes_the_loop_and_queues_its_row() {
+        let woken = Arc::new(AtomicUsize::new(0));
+        let wake = wake::Wake::new();
+        let count = woken.clone();
+        wake.set(move |_| {
+            count.fetch_add(1, Ordering::SeqCst);
+        });
+        wake.bind();
+        let mut menu = mac::Menu::default();
+        let click = menu.open_clicks();
+        click
+            .send(muda::MenuEvent {
+                id: "window.home.show".into(),
+            })
+            .unwrap();
+        assert!(woken.load(Ordering::SeqCst) > 0);
+        assert_eq!(menu.take(), [Entry::Home]);
     }
 }

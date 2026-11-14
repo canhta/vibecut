@@ -981,6 +981,50 @@ fn preview_axis_hover_scrubs_the_counter_and_preview_without_moving_the_playhead
 }
 
 #[test]
+fn a_frame_step_with_the_pointer_on_the_ruler_moves_the_counter_when_woken() {
+    // Bound before the editor builds its playback: each worker keeps this wake.
+    let woken = crate::woken::Woken::bind();
+    let fixture = fixture();
+    let mut editor = fixture.editor;
+    let playhead = Tick(3 * SECOND);
+    editor
+        .playback
+        .seek(playhead, false, editor.session.project().clone())
+        .unwrap();
+    let mut harness = harness(editor);
+    woken.attach(&harness.ctx);
+    harness.run_steps(3);
+    let fps = harness.state().session.project().data().canvas.fps;
+    let ruler = widget(&harness, "timeline.ruler");
+    let zoom = harness.state().inspect().unwrap().zoom;
+    // The pointer rests on the ruler at the playhead, as after a click there.
+    harness.hover_at(egui::pos2(ruler.left() + 3.0 * zoom, ruler.center().y));
+    harness.run_steps(2);
+    assert!(harness.state().inspect().unwrap().hover_time.is_some());
+
+    harness.key_press(egui::Key::ArrowRight);
+    let want = playhead + fps.frame_duration().unwrap();
+    let label = time::format_timecode(want, fps).unwrap();
+    woken.step_until(
+        &mut harness,
+        "the counter shows the stepped frame",
+        |editor| editor.inspect().unwrap().timecode == label,
+    );
+    let after = harness.state().inspect().unwrap();
+    assert_eq!(after.position, want);
+    assert_eq!(
+        after.hover_time, None,
+        "the step ends the hover until the pointer moves"
+    );
+
+    // Moving the pointer again resumes the preview-axis hover.
+    harness.hover_at(egui::pos2(ruler.left() + 5.0 * zoom, ruler.center().y));
+    woken.step_until(&mut harness, "the hover resumes", |editor| {
+        editor.inspect().unwrap().hover_time.is_some()
+    });
+}
+
+#[test]
 fn preview_axis_tail_tracks_the_guide_counter_and_actual_layer_pixels() {
     let mut data = Project::empty(ProjectId(301), "Layer ends".into())
         .unwrap()

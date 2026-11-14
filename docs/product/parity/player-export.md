@@ -18,7 +18,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | PLAY-10 | Show / hide rulers | Done | Differs | 14/100133 | Moved from the canvas frame to the viewer edges at landing 18; they cover the canvas edge when it fills the viewer width |
 | PLAY-11 | Guide and ruler geometry | Partial | Differs | 14/100216 | Rulers on viewer edges, guides span the viewer since landing 18; native re-measure and label steps beyond 700 and 1000 open |
 | PLAY-12 | Play / pause | Done | Matches | 14b/110531 | |
-| PLAY-13 | Timecode | Done | Matches | 05/221643 | |
+| PLAY-13 | Timecode | Done | Matches | 05/221643 | Follows a frame step even with the pointer on the timeline |
 | PLAY-14 | Fit button | Done | Matches | 05/221643 | |
 | PLAY-15 | Zoom control | Done | Differs | 14d/151402 | Preset list |
 | PLAY-16 | Full screen | Done | Proposed | 14b/110536 | |
