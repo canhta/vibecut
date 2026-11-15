@@ -64,8 +64,9 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) drop_zone_pass: u64,
     /// The OS clipboard's file list, read on paste; tests inject a fixture reader.
     pub(in crate::editor) os_files: crate::services::clipboard::FileClipboard,
-    /// A paste import in flight: the playhead its probed files insert at.
-    pub(in crate::editor) paste_at: Option<super::Tick>,
+    /// A paste import in flight: where its probed files insert (the playhead with automatic
+    /// placement, or a brand kit drop's time and resolved placement).
+    pub(in crate::editor) paste_at: Option<(super::Tick, engine::Placement)>,
     /// Assets the current import batch added, in probe order.
     pub(in crate::editor) import_added: Vec<super::AssetId>,
     /// Filters tab: the chosen shelf and the tile preview owner, built when the tab first shows.

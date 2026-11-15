@@ -193,6 +193,16 @@ impl Editor {
                 at,
                 placement,
             } => self.drop_media(&assets, at, placement),
+            Action::InsertBrandMedia {
+                media,
+                at,
+                placement,
+            } => {
+                self.assets.media_drag = None;
+                self.with_assets(|state, port| {
+                    state.insert_brand_media(port, media, at, placement);
+                });
+            }
             // The area applies every other action itself.
             _ => {}
         }

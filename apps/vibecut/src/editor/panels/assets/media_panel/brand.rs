@@ -2,14 +2,16 @@
 //!
 //! Both are registry commands (`brand.list`, `brand.copy_media`) sent through
 //! `services::assets::brand`; a listing hashes every kit file and a copy reads a whole file, so
-//! both run on a thread the frame polls. A click copies the kit file into the project's media
-//! folder and hands that copy to the paste import, which inserts it at the playhead the click
-//! saw: the project gets its own file and never names the kit's.
+//! both run on a thread the frame polls. A click, or a drag released over the timeline, copies
+//! the kit file into the project's media folder and hands that copy to the paste import, which
+//! inserts it where the click (the playhead) or the drop (its time and landing) asked: the
+//! project gets its own file and never names the kit's.
 use crate::editor::Port;
+use crate::editor::context::{DragSource, MediaDrag};
 use crate::editor::panels::assets::{AssetsTab, MediaSection, State};
 use crate::i18n::Text;
-use crate::services::assets::brand::{self, run_brand};
-use engine::control::{BrandKitView, ControlResult};
+use crate::services::assets::brand::{self, copy_media, run_brand};
+use engine::control::{BrandEntryState, BrandKitView, BrandMediaSection, BrandMediaView};
 use libraries::brand_kit::BrandKit;
 use std::{
     path::PathBuf,
@@ -28,13 +30,16 @@ pub(in crate::editor) enum Listing {
     Failed,
 }
 
+/// Where a copied kit file inserts once it is imported.
+type Landing = (Tick, engine::Placement);
+
 /// The lent store and the work the page started on it.
 pub(in crate::editor) struct BrandAssets {
     store: Arc<BrandKit>,
     pub(in crate::editor) listing: Listing,
     load: Option<Receiver<Result<Option<BrandKitView>, String>>>,
-    /// The copy a click started and the playhead its file inserts at.
-    copy: Option<(Receiver<Result<PathBuf, String>>, Tick)>,
+    /// The copy a click or drop started and where its file inserts.
+    copy: Option<(Receiver<Result<PathBuf, String>>, Landing)>,
     started: bool,
 }
 
@@ -64,9 +69,19 @@ impl BrandAssets {
         self.started = true;
     }
 
-    /// A clicked file is still being copied into the project.
+    /// A clicked or dropped file is still being copied into the project.
     pub(in crate::editor) fn copying(&self) -> bool {
         self.copy.is_some()
+    }
+
+    /// The listed entry `media`, when it is present and verified.
+    fn available(&self, media: u64) -> Option<&BrandMediaView> {
+        let Listing::Ready(Some(kit)) = &self.listing else {
+            return None;
+        };
+        kit.media
+            .iter()
+            .find(|entry| entry.id == media && entry.state == BrandEntryState::Available)
     }
 }
 
@@ -100,21 +115,21 @@ impl State {
             }
         }
         let copied = match &brand.copy {
-            Some((copy, at)) => match copy.try_recv() {
-                Ok(result) => Some((result, *at)),
-                Err(TryRecvError::Disconnected) => Some((Err(String::new()), *at)),
+            Some((copy, landing)) => match copy.try_recv() {
+                Ok(result) => Some((result, *landing)),
+                Err(TryRecvError::Disconnected) => Some((Err(String::new()), *landing)),
                 Err(TryRecvError::Empty) => None,
             },
             None => None,
         };
-        let Some((result, at)) = copied else {
+        let Some((result, (at, placement))) = copied else {
             return;
         };
         brand.copy = None;
         let started = result
             .map_err(|detail| (!detail.is_empty()).then_some(detail))
             .and_then(|path| {
-                self.paste_files(port, vec![path], at)
+                self.paste_files(port, vec![path], at, placement)
                     .map_err(|error| Some(error.to_string()))
             });
         if let Err(detail) = started {
@@ -123,10 +138,50 @@ impl State {
         }
     }
 
-    /// Copy one kit file into the project's media folder; when the copy lands, it is imported
-    /// and inserted at the current playhead. A file the kit reports missing or damaged, or a
-    /// copy already running, refuses with a toast.
-    pub(in crate::editor) fn insert_brand_media(&mut self, port: &mut Port<'_>, media: u64) {
+    /// A row click: the kit file inserts at the current playhead, placed automatically.
+    pub(in crate::editor) fn click_brand_media(&mut self, port: &mut Port<'_>, media: u64) {
+        match port.playhead() {
+            Ok(at) => self.insert_brand_media(port, media, at, engine::Placement::Auto),
+            Err(error) => {
+                let text = port.tr(Text::BrandAssetsInsertFailed);
+                port.toast(text, Some(error.to_string()));
+            }
+        }
+    }
+
+    /// Record the drag a press on an available kit row starts; the timeline resolves its
+    /// landing like a Media drag. A music file lands on audio tracks, every other section on
+    /// video tracks, as its imported copy will.
+    pub(in crate::editor) fn begin_brand_drag(&mut self, media: u64) {
+        let Some(entry) = self.brand.as_ref().and_then(|brand| brand.available(media)) else {
+            return;
+        };
+        let kind = match entry.section {
+            BrandMediaSection::Music => project::TrackKind::Audio,
+            BrandMediaSection::Video
+            | BrandMediaSection::Image
+            | BrandMediaSection::Sticker
+            | BrandMediaSection::Background => project::TrackKind::Video,
+        };
+        self.media_drag = Some(MediaDrag {
+            source: DragSource::Brand {
+                media,
+                name: entry.name.clone(),
+            },
+            kind,
+        });
+    }
+
+    /// Copy one kit file into the project's media folder through `brand.copy_media`; when the
+    /// copy lands, it is imported and inserted at `at` with `placement`. A file the kit reports
+    /// missing or damaged, or a copy or import already running, refuses with a toast.
+    pub(in crate::editor) fn insert_brand_media(
+        &mut self,
+        port: &mut Port<'_>,
+        media: u64,
+        at: Tick,
+        placement: engine::Placement,
+    ) {
         let importing = self.importing();
         let started = (|| -> crate::Result<()> {
             let brand = self
@@ -136,28 +191,18 @@ impl State {
             if brand.copying() || importing {
                 return Err(crate::Error::Invalid("brand asset insert in progress"));
             }
-            let Listing::Ready(Some(kit)) = &brand.listing else {
-                return Err(crate::Error::Invalid("brand kit not listed"));
-            };
-            if !kit.media.iter().any(|entry| {
-                entry.id == media && entry.state == engine::control::BrandEntryState::Available
-            }) {
+            if brand.available(media).is_none() {
                 return Err(crate::Error::Invalid("brand asset unavailable"));
             }
-            let at = port.playhead()?;
             let directory = project::media_dir(port.session.saved_path());
             let (store, budget) = (brand.store.clone(), port.read.budget.clone());
             let (send, receive) = wake::channel();
             std::thread::spawn(move || {
-                let params = serde_json::json!({"media": media, "dir": directory});
-                let copied = match run_brand(&store, &budget, "brand.copy_media", params) {
-                    Ok(ControlResult::BrandMediaCopied { path }) => Ok(path),
-                    Ok(_) => Err(String::from("brand kit copy result")),
-                    Err(error) => Err(error.to_string()),
-                };
+                let copied = copy_media(&store, &budget, directory, media)
+                    .map_err(|error| error.to_string());
                 let _ = send.send(copied);
             });
-            brand.copy = Some((receive, at));
+            brand.copy = Some((receive, (at, placement)));
             Ok(())
         })();
         if let Err(error) = started {

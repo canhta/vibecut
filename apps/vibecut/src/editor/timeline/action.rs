@@ -72,6 +72,14 @@ pub(in crate::editor) enum Action {
         at: Tick,
         placement: engine::Placement,
     },
+    /// A Brand assets drag released over the lanes: copy that kit file into the project
+    /// (`brand.copy_media`), import the copy and insert it at `at` with the placement the drop
+    /// resolved. The frame applies it.
+    InsertBrandMedia {
+        media: u64,
+        at: Tick,
+        placement: engine::Placement,
+    },
     /// Open the native media picker to replace one clip's source; the window owns the dialog.
     ReplaceMedia(ItemId),
     /// Open the captions transcript pane on one clip and select its words; the frame routes it.

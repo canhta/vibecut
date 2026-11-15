@@ -16,7 +16,7 @@ Adjustment presets are not stored yet: their type lives in the desktop app's pre
 
 ## Operations
 
-`create`, `rename`, `delete`, `set_active` manage kits; `kits()` lists them with the active flag. `add_color`, `remove_color`, `add_font`, `remove_font`, `add_media` (into a section), `rename_media`, `remove_media`, `add_text_preset`, `remove_text_preset`, `add_caption_preset` and `remove_caption_preset` edit one kit. Removal by name returns `NotFound` when the name is absent. `active_view()` returns the active kit as the engine's `BrandKitView`, the value `brand.list` reports; it hashes every media file, so callers run it off the UI thread. `active_fonts()` reads the active kit's families without touching a file. `copy_media(kit, media, dest)` copies one stored file to a new path and verifies the copy: a project inserting a kit file imports that copy, never the stored file.
+`create`, `rename`, `delete`, `set_active` manage kits; `kits()` lists them with the active flag. `add_color`, `remove_color`, `add_font`, `remove_font`, `add_media` (into a section), `rename_media`, `remove_media`, `add_text_preset`, `remove_text_preset`, `add_caption_preset` and `remove_caption_preset` edit one kit. Removal by name returns `NotFound` when the name is absent. `active_view()` returns the active kit as the engine's `BrandKitView`, the value `brand.list` reports; it hashes every media file, so callers run it off the UI thread. `copy_media(kit, media, dest)` copies one stored file to a new path and verifies the copy: a project inserting a kit file imports that copy, never the stored file.
 
 Every change is validated as a whole, written to `brand_kits.json` through a `.partial` file and renamed into place, and only then published. A failed change leaves the previous state; media files that no kit cites are removed. One `project::WriterLease` on `brand_kits.vibecut` serialises writers across processes.
 
@@ -52,7 +52,7 @@ Failures are `engine::BrandKitError`: `NotFound`, `Limit`, `Invalid(what)`, `Int
 
 ## Control
 
-`with_control` lends the store as `engine::control::BrandAccess` for one request; the desktop's `services::assets::brand::run_brand` and any composition root send the registry commands through it. Commands act on the active kit and every edit answers with the kit after it:
+`open(root)` opens a store under any root; `native()` opens the user's, `<HOME, else APPDATA>/.config/vibecut/brand_kits`, the folder the desktop app keeps beside its preferences. `with_control` lends the store as `engine::control::BrandAccess` for one request; the desktop's `services::assets::brand::run_brand` and the CLI control session send the registry commands through it. Commands act on the active kit and every edit answers with the kit after it:
 
 | Command | Store operation | Agent grant |
 |---|---|---|
@@ -62,6 +62,6 @@ Failures are `engine::BrandKitError`: `NotFound`, `Limit`, `Invalid(what)`, `Int
 | `brand.remove_media {media}` | `remove_media` | allowed |
 | `brand.add_font {family, kit_name}` | `add_font` | allowed |
 | `brand.remove_font {family}` | `remove_font` | allowed |
-| `brand.copy_media {media, dir}` | `copy_media` into `dir` under the entry name, made safe and unique, verified | Human (writes a file) |
+| `brand.copy_media {media}` | `copy_media` into the session's media folder under the entry name, made safe and unique, verified | allowed (the session names the folder) |
 
-The adds create the kit `kit_name` and make it active when no kit is active; the others refuse `NotFound` without one. Without a lent store the commands refuse `Unavailable`. The control adapter is `control.rs`.
+The adds create the kit `kit_name` and make it active when no kit is active; the others refuse `NotFound` without one. Without a lent store the commands refuse `Unavailable`; `brand.copy_media` also refuses `Unavailable` in a session whose composition root set no media folder (`Session::set_media_dir`). The control adapter is `control.rs`.

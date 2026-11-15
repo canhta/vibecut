@@ -279,13 +279,12 @@ Effect: `Read`. Fixture: `Timeline`.
 }
 ```
 
-## `brand.copy_media` — Copy brand kit file into a folder
+## `brand.copy_media` — Copy brand kit file into the project
 
 Effect: `Read`. Fixture: `Timeline`.
 
 ```json
 {
-  "dir": "$output/media",
   "media": 1
 }
 ```

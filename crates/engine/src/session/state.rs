@@ -76,6 +76,8 @@ pub struct Session {
     item_clipboard: Option<Arc<super::ItemClipboard>>,
     metadata: project::Metadata,
     protected: Vec<std::path::PathBuf>,
+    /// The project's own media folder, where commands that copy a file into the project write.
+    media_dir: Option<std::path::PathBuf>,
     pub(crate) identity: Arc<super::wire::Revision>,
     pub(crate) revision: Arc<super::wire::Revision>,
     pub(crate) generation: u64,
@@ -170,6 +172,7 @@ impl Session {
             item_clipboard: None,
             metadata: project::Metadata::default(),
             protected: Vec::new(),
+            media_dir: None,
             revision: Arc::new(super::wire::Revision(format!("{}:0", identity.0))),
             identity,
             generation: 0,
@@ -362,6 +365,20 @@ impl Session {
     }
     pub fn protected_paths(&self) -> &[std::path::PathBuf] {
         &self.protected
+    }
+    /// Set the project's media folder (`project::media_dir` of its file), the one destination
+    /// `brand.copy_media` writes to. Composition roots set it; no command parameter names it.
+    pub fn set_media_dir(&mut self, dir: std::path::PathBuf) -> Result<()> {
+        if dir.as_os_str().len() > super::wire::MAX_PATH_BYTES {
+            return Err(EditError::Control(
+                crate::session::wire::ControlError::Limit,
+            ));
+        }
+        self.media_dir = Some(dir);
+        Ok(())
+    }
+    pub fn media_dir(&self) -> Option<&std::path::Path> {
+        self.media_dir.as_deref()
     }
     /// Load optional sidecar presentation state, outside project history.
     pub fn restore_metadata(&mut self, metadata: project::Metadata) -> Result<()> {

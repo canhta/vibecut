@@ -142,7 +142,7 @@ pub const TABLE: &[(&str, Verdict)] = &[
     ("bookmark.update", Verdict::Allow),
     ("brand.add_font", Verdict::Allow),
     ("brand.add_media", Verdict::Refuse(Reason::Path)),
-    ("brand.copy_media", Verdict::Refuse(Reason::Export)),
+    ("brand.copy_media", Verdict::Allow),
     ("brand.list", Verdict::Allow),
     ("brand.remove_font", Verdict::Allow),
     ("brand.remove_media", Verdict::Allow),

@@ -226,9 +226,15 @@ impl Session {
                     family: family.into(),
                 },
             ),
-            Command::BrandCopyMedia { media, dir } => Ok(ControlResult::BrandMediaCopied {
-                path: (brand_access(caller)?.copy)(media, &dir)?,
-            }),
+            // The copy lands in the folder the composition root gave this session, never in
+            // one the caller names; a session without one refuses before touching the kit.
+            Command::BrandCopyMedia { media } => {
+                let access = brand_access(caller)?;
+                let dir = self.media_dir().ok_or(crate::BrandKitError::Unavailable)?;
+                Ok(ControlResult::BrandMediaCopied {
+                    path: (access.copy)(media, dir)?,
+                })
+            }
             Command::TranscriptSearch { query, limit } => {
                 let limit = limit.map_or(crate::transcript::search::DEFAULT_HITS, |limit| {
                     usize::try_from(limit).unwrap_or(usize::MAX)

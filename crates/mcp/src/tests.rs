@@ -785,7 +785,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("brand.list", Effect::Read, true, true),
         ("brand.add_font", Effect::Read, true, true),
         ("brand.add_media", Effect::Read, false, false),
-        ("brand.copy_media", Effect::Read, false, false),
+        ("brand.copy_media", Effect::Read, true, true),
         ("brand.remove_font", Effect::Read, true, true),
         ("brand.remove_media", Effect::Read, true, true),
         ("brand.rename_media", Effect::Read, true, true),

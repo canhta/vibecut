@@ -277,8 +277,39 @@ impl State {
         self.font_import = Some(pending);
     }
 
+    /// Each time the picker opens, read the active brand kit's families through `brand.list`
+    /// on a thread (the listing hashes every kit file) and lead the list with them when the
+    /// answer lands; until then the families of the last read stay. An unreadable kit adds none.
+    fn poll_brand_fonts(&mut self, port: &mut Port<'_>) {
+        let Some(store) = &self.brand else {
+            return;
+        };
+        let lifetime = self.font_picker.lifetime;
+        let current = self
+            .brand_fonts
+            .as_ref()
+            .is_some_and(|(serves, _)| *serves == lifetime);
+        if self.font_picker.open && !current {
+            let (store, budget) = (store.clone(), port.view().budget.clone());
+            let (send, receive) = wake::channel();
+            std::thread::spawn(move || {
+                let families =
+                    crate::services::assets::brand::fonts(&store, &budget).unwrap_or_default();
+                let _ = send.send(families);
+            });
+            self.brand_fonts = Some((lifetime, receive));
+        }
+        if let Some((serves, receive)) = &self.brand_fonts
+            && *serves == lifetime
+            && let Ok(families) = receive.try_recv()
+        {
+            self.font_picker.kit = families;
+        }
+    }
+
     /// Poll owned font work; imports never implicitly choose a family or edit text.
     pub(in crate::editor) fn poll_fonts(&mut self, port: &mut Port<'_>) {
+        self.poll_brand_fonts(port);
         if self.font_backend.is_some() && self.ensure_font_backend(port).is_err() {
             self.cancel_font_import(port);
             return;

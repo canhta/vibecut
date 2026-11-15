@@ -166,9 +166,11 @@ pub(in crate::editor) struct State {
     color_base: Option<Arc<project::Project>>,
     /// Font picker popover, its catalog and download.
     font_picker: font_picker::State,
-    /// The user's brand kits, lent by the composition root; the font list reads the active
-    /// kit's families from it each time it opens.
+    /// The user's brand kits, lent by the composition root; each time the font list opens it
+    /// reads the active kit's families through `brand.list`, off the UI thread.
     brand: Option<Arc<libraries::brand_kit::BrandKit>>,
+    /// That read: the picker lifetime it serves and its answer, once it lands.
+    brand_fonts: Option<(u64, std::sync::mpsc::Receiver<Vec<String>>)>,
     /// The Save style notice is open for this item and snapshot; OK goes on to save.
     preset_notice: Option<(ItemId, Arc<project::Project>)>,
     /// Catalog commands for the font picker; opened lazily on first use.
@@ -324,6 +326,7 @@ impl Default for State {
             color_base: None,
             font_picker: font_picker::State::default(),
             brand: None,
+            brand_fonts: None,
             preset_notice: None,
             font_backend: None,
             lut: workflow::jobs::lut::LutWorkflow::default(),

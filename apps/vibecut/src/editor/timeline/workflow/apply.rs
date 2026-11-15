@@ -80,7 +80,8 @@ pub(in crate::editor) fn apply(
             | Action::BeginGesture { .. }
             | Action::BeginPreview { .. }
             | Action::CancelInteraction
-            | Action::InsertMedia { .. }) => {
+            | Action::InsertMedia { .. }
+            | Action::InsertBrandMedia { .. }) => {
                 let mut rest = vec![frame];
                 rest.extend(actions);
                 return rest;

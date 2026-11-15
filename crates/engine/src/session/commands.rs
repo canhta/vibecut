@@ -695,7 +695,7 @@ commands! {
     UpdateBookmark, "bookmark.update", "Update bookmark", Edit { bookmark: BookmarkId, #[serde(default)] note: Option<NfcText>, #[serde(default)] color: Option<Color>, #[serde(default)] duration: Option<Tick> } => Timeline, serde_json::json!({"bookmark":1,"note":"Marked","color":[0,157,255,255],"duration":0});
     BrandAddFont, "brand.add_font", "Add font to brand kit", Read { family: NfcText, kit_name: NfcText } => Timeline, serde_json::json!({"family":"Inter","kit_name":"Brand kit"}), returns = [BrandKit];
     BrandAddMedia, "brand.add_media", "Add file to brand kit", Read { section: super::wire::BrandMediaSection, path: std::path::PathBuf, name: NfcText, kit_name: NfcText } => Timeline, serde_json::json!({"section":"image","path":"$output/logo.png","name":"logo.png","kit_name":"Brand kit"}), grant = Human, returns = [BrandKit];
-    BrandCopyMedia, "brand.copy_media", "Copy brand kit file into a folder", Read { media: u64, dir: std::path::PathBuf } => Timeline, serde_json::json!({"media":1,"dir":"$output/media"}), grant = Human, returns = [BrandMediaCopied];
+    BrandCopyMedia, "brand.copy_media", "Copy brand kit file into the project", Read { media: u64 } => Timeline, serde_json::json!({"media":1}), returns = [BrandMediaCopied];
     BrandList, "brand.list", "List active brand kit", Read {} => Timeline, serde_json::json!({}), returns = [BrandKit];
     BrandRemoveFont, "brand.remove_font", "Remove font from brand kit", Read { family: NfcText } => Timeline, serde_json::json!({"family":"Inter"}), returns = [BrandKit];
     BrandRemoveMedia, "brand.remove_media", "Remove file from brand kit", Read { media: u64 } => Timeline, serde_json::json!({"media":1}), returns = [BrandKit];

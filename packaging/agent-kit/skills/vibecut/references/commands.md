@@ -24,7 +24,7 @@ API version: 36. Registry digest: `034b36fb46b37f54304e5900895de03a91a8ee62d5115
 | `bookmark.update` | `Edit` | Update bookmark |
 | `brand.add_font` | `Read` | Add font to brand kit |
 | `brand.add_media` | `Read` | Add file to brand kit |
-| `brand.copy_media` | `Read` | Copy brand kit file into a folder |
+| `brand.copy_media` | `Read` | Copy brand kit file into the project |
 | `brand.list` | `Read` | List active brand kit |
 | `brand.remove_font` | `Read` | Remove font from brand kit |
 | `brand.remove_media` | `Read` | Remove file from brand kit |

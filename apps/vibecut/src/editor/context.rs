@@ -25,11 +25,21 @@ pub(crate) enum SaveStatus {
 }
 pub(crate) use visuals::VisualQuery;
 
-/// A Media-panel drag in flight: the dragged assets and the track kind they insert as.
+/// A Media-panel drag in flight: what is dragged and the track kind it inserts as.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct MediaDrag {
-    pub(crate) assets: Vec<media::AssetId>,
+    pub(crate) source: DragSource,
     pub(crate) kind: project::TrackKind,
+}
+
+/// What a Media-panel drag carries.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum DragSource {
+    /// Project assets from the Media page.
+    Assets(Vec<media::AssetId>),
+    /// One brand kit file from the Brand assets page: a drop copies it into the project
+    /// (`brand.copy_media`) and imports the copy, as a click does.
+    Brand { media: u64, name: String },
 }
 
 /// Human-only desktop cache intentions, outside editing/agent commands.

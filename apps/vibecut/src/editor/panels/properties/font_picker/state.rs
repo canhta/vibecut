@@ -83,7 +83,8 @@ pub struct State {
     pub preview_fonts: BTreeSet<String>,
     /// Families installed this pass; they become usable on the next pass.
     pub preview_pending: BTreeSet<String>,
-    /// The active brand kit's families in kit order, read when the picker opens.
+    /// The active brand kit's families in kit order, read through `brand.list` each time the
+    /// picker opens.
     pub kit: Vec<String>,
 }
 impl State {
@@ -174,6 +175,7 @@ impl State {
             download: self.download.clone(),
             has_imports: self.has_imports,
             preview_fonts: self.preview_fonts.iter().cloned().collect(),
+            kit: self.kit.clone(),
         }
     }
 }
@@ -192,6 +194,8 @@ pub struct Inspection {
     pub has_imports: bool,
     /// Installed preview typefaces, as evidence that rows use their own face.
     pub preview_fonts: Vec<String>,
+    /// The active brand kit's families that lead the list, in kit order.
+    pub kit: Vec<String>,
 }
 
 #[cfg(test)]

@@ -254,4 +254,6 @@ pub(in crate::editor) enum Action {
     RefreshBrand,
     /// Copy one brand kit file into the project and insert it at the playhead.
     InsertBrandMedia(u64),
+    /// A press on a brand kit row started a drag; the timeline resolves where it lands.
+    BrandDrag(u64),
 }

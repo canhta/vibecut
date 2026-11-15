@@ -1,4 +1,5 @@
-//! Renders the Brand assets page: the active kit's files by section, each a click to insert.
+//! Renders the Brand assets page: the active kit's files by section, each a click to insert at
+//! the playhead or a drag onto the timeline.
 //!
 //! The header row follows capture 111016 (the kit's name at the left, the refresh icon at the
 //! right; the reference's settings gear opens its online space and is not built). Rows are name
@@ -147,6 +148,7 @@ impl View<'_> {
                                     )
                                     .fill(theme::hover(dark))
                                     .stroke(egui::Stroke::NONE)
+                                    .sense(egui::Sense::click_and_drag())
                                     .truncate()
                                     .min_size(Vec2::new(
                                         ui.available_width(),
@@ -156,6 +158,9 @@ impl View<'_> {
                                 self.remember(format!("media.brand.{}", entry.id), &response, None);
                                 if response.clicked() {
                                     self.actions.push(Action::InsertBrandMedia(entry.id));
+                                }
+                                if response.drag_started() {
+                                    self.actions.push(Action::BrandDrag(entry.id));
                                 }
                             }
                             ui.add_space(theme::space::MD);

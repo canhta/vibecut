@@ -45,6 +45,15 @@ impl BrandKit {
         })
     }
 
+    /// Opens the user's store where the desktop app keeps it, beside its preferences:
+    /// `<HOME, else APPDATA>/.config/vibecut/brand_kits`. A host with neither is `Unavailable`.
+    pub fn native() -> Result<Self> {
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("APPDATA"))
+            .ok_or(BrandKitError::Unavailable)?;
+        Self::open(&PathBuf::from(home).join(".config/vibecut/brand_kits"))
+    }
+
     pub fn kits(&self) -> Result<Vec<KitSummary>> {
         let index = self.lock()?;
         Ok(index
@@ -207,16 +216,6 @@ impl BrandKit {
             .cloned()
             .ok_or(BrandKitError::NotFound)?;
         files::export_media(&self.root, &media, dest)
-    }
-
-    /// The active kit's font families in kit order, read without touching any file; empty when
-    /// no kit is active.
-    pub fn active_fonts(&self) -> Result<Vec<String>> {
-        let index = self.lock()?;
-        match index.active {
-            Some(active) => Ok(index.kit(active)?.content.fonts.clone()),
-            None => Ok(Vec::new()),
-        }
     }
 
     pub fn remove_media(&self, id: u64, media_id: u64) -> Result<()> {

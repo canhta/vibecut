@@ -41,7 +41,8 @@ impl State {
                         brand.refresh(port.read.budget);
                     }
                 }
-                Action::InsertBrandMedia(media) => self.insert_brand_media(port, media),
+                Action::InsertBrandMedia(media) => self.click_brand_media(port, media),
+                Action::BrandDrag(media) => self.begin_brand_drag(media),
                 Action::Select(id, modifiers) => self.select_asset(port, id, modifiers),
                 Action::Delete(ids) => self.request_media_delete(port.session, ids),
                 Action::RenameMedia(id) => self.request_media_rename(port.session, id),

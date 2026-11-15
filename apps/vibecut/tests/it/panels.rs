@@ -5474,7 +5474,9 @@ fn font_picker_lists_search_chips_sections_and_favorites_through_commands() {
     assert_eq!(harness.state().session.history_len().0, history);
 
     // The active brand kit's families lead the list each time it opens, ahead of a favourite
-    // and out of the System font section.
+    // and out of the System font section. They arrive through `brand.list` on a worker.
+    let woken = crate::woken::Woken::bind();
+    woken.attach(&harness.ctx);
     let kits = tempfile::tempdir().unwrap();
     let store = libraries::brand_kit::BrandKit::open(kits.path()).unwrap();
     let kit = store.create("Brand").unwrap();
@@ -5482,6 +5484,10 @@ fn font_picker_lists_search_chips_sections_and_favorites_through_commands() {
     store.set_active(Some(kit)).unwrap();
     harness.state_mut().set_brand_kit(Arc::new(store));
     open_font_picker(&mut harness);
+    woken.step_until(&mut harness, "the brand kit's families", |editor| {
+        editor.inspect().unwrap().font_picker.kit == ["Arial"]
+    });
+    harness.run_steps(1);
     assert!(
         widget_rect(&harness, "inspector.text_font.Arial").top()
             < widget_rect(&harness, "inspector.text_font.Noto Serif").top(),

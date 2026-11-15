@@ -247,7 +247,7 @@ pub struct BrandAccess<'a> {
 impl<'a> BrandAccess<'a> {
     /// `list` serves `brand.list` (the active kit, or `None`); `edit` serves the edits and
     /// returns the active kit after them; `copy` serves `brand.copy_media`, copying one
-    /// active-kit file into a folder and returning the new file's path.
+    /// active-kit file into the session's media folder and returning the new file's path.
     pub fn new(
         list: &'a dyn Fn() -> Result<Option<BrandKitView>>,
         edit: &'a dyn Fn(BrandEdit) -> Result<Option<BrandKitView>>,

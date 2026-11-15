@@ -59,9 +59,14 @@ A non-generated asset whose source file is gone draws its tile with the missing 
 
 `brand` owns the Brand assets page's work on the lent brand kit store: the `brand.list`
 command (which hashes every kit file, so it runs on a thread the frame polls), sent when the
-page first shows and on its refresh icon, and the `brand.copy_media` command a row click
-sends. The copy goes into the project's media folder under the entry's name, made unique and
+page first shows and on its refresh icon, and the `brand.copy_media` command a row click or
+a row drag released over the timeline sends. A drag is a Media drag (`DragSource::Brand`):
+the timeline resolves its landing at the same drop seam as project assets, without Replace,
+since the file has no probed duration yet; music lands on audio tracks, every other section
+on video tracks. The copy goes into the project's media folder (the session's, set through
+`Session::set_media_dir`; the command names none) under the entry's name, made unique and
 safe for every filesystem, and is verified against the kit's hash; it then enters the paste
-import, which inserts it at the playhead the click saw. The project names its own copy and
-never the kit's stored file, so later kit edits leave it unchanged. A missing or damaged kit
-file, a copy already running or an import in progress refuses with a toast.
+import, which inserts it at the playhead the click saw, or at the drop's time and placement.
+The project names its own copy and never the kit's stored file, so later kit edits leave it
+unchanged. A missing or damaged kit file, a copy already running or an import in progress
+refuses with a toast.
