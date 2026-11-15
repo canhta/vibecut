@@ -30,6 +30,8 @@ pub enum Action {
     OpenWithPrompt(PathBuf, String),
     OpenFile,
     Shorts,
+    /// Pick files for one brand kit section; the answer goes to `brand_media_picked`.
+    PickBrandMedia(engine::control::BrandMediaSection),
 }
 
 pub(super) struct RenameDialog {
@@ -88,6 +90,11 @@ pub struct State {
     pub(super) notice: Option<(Text, Option<String>)>,
     pub(super) list_error: Option<String>,
     pub(super) action: Option<Action>,
+    /// The rail's Brand kit page replaces the projects page while it is open.
+    pub(super) brand_open: bool,
+    pub(super) brand: super::brand_kit::Page,
+    /// The language of the last frame, for names Home writes into the brand kit.
+    pub(super) locale: crate::i18n::Locale,
 }
 
 impl State {
@@ -126,6 +133,9 @@ impl State {
             notice: None,
             list_error: None,
             action: None,
+            brand_open: false,
+            brand: super::brand_kit::Page::default(),
+            locale: crate::i18n::Locale::En,
         };
         page.spawn();
         page
@@ -169,6 +179,16 @@ impl State {
         }
     }
 
+    /// The files the brand kit picker returned for `section`; a dismissed picker gives none.
+    pub fn brand_media_picked(
+        &mut self,
+        section: engine::control::BrandMediaSection,
+        paths: Vec<PathBuf>,
+    ) {
+        let kit_name = crate::i18n::text(self.locale, Text::BrandKit).to_owned();
+        self.brand.add_media(section, paths, kit_name);
+    }
+
     /// Open the About dialog over Home.
     pub fn open_about(&mut self) {
         self.about = Some(crate::services::views::about::Page::Main);
@@ -176,6 +196,11 @@ impl State {
 
     pub fn busy(&self) -> bool {
         !self.ready || self.pending > 0
+    }
+
+    /// The brand kit page has a listing or an edit in flight.
+    pub fn brand_busy(&self) -> bool {
+        self.brand.busy()
     }
 
     #[cfg(test)]
@@ -461,6 +486,7 @@ impl State {
     }
 
     pub fn tick(&mut self) {
+        self.brand.tick();
         loop {
             match self.events.try_recv() {
                 Ok(event) => self.apply(event),
@@ -812,6 +838,7 @@ mod tests {
                             status: None,
                             default_fps: 30,
                             welcome_seen: &mut true,
+                            brand: None,
                         },
                         ui,
                     );
@@ -897,6 +924,7 @@ mod tests {
                             status: None,
                             default_fps: 30,
                             welcome_seen: &mut true,
+                            brand: None,
                         },
                         ui,
                     );
@@ -1061,5 +1089,128 @@ mod tests {
             page.entries()[0].thumbnail,
             Thumbnail::Ready { .. }
         ));
+    }
+
+    /// Fails if Home lists the kit before the page opens, if the add tile does not ask for its
+    /// section's picker, if the picked file does not reach the store through `brand.add_media`,
+    /// or if a tile's Remove (`brand.remove_media`) leaves the file listed.
+    #[test]
+    fn brand_kit_page_adds_and_removes_a_file_through_the_store() {
+        use egui_kittest::{
+            Harness,
+            kittest::{By, Queryable},
+        };
+        use engine::control::BrandMediaSection;
+        type Fixture = (
+            State,
+            crate::kit::Look,
+            ProjectsPreferences,
+            std::sync::Arc<libraries::brand_kit::BrandKit>,
+            Vec<Action>,
+        );
+        let root = tempfile::tempdir().expect("directory");
+        let store = libraries::brand_kit::BrandKit::open(&root.path().join("brand_kits"))
+            .expect("brand kit store");
+        let logo = root.path().join("logo.png");
+        std::fs::write(&logo, b"logo").expect("source file");
+        let page = State::new(
+            root.path().join("projects"),
+            ByteBudget::new(64 << 20).unwrap(),
+            engine::footage::uncorrected(),
+        );
+        let mut harness = Harness::builder()
+            .with_context_setup(|ctx| {
+                crate::Editor::fonts(ctx);
+                kit::install(ctx);
+            })
+            .with_size(egui::vec2(1440.0, 900.0))
+            .build_ui_state(
+                |ui, state: &mut Fixture| {
+                    crate::Editor::theme(ui.ctx(), state.1.dark);
+                    state.0.tick();
+                    let actions = crate::home::show(
+                        &mut state.0,
+                        crate::home::Context {
+                            look: state.1,
+                            projects: &mut state.2,
+                            status: None,
+                            default_fps: 30,
+                            welcome_seen: &mut true,
+                            brand: Some(state.3.clone()),
+                        },
+                        ui,
+                    );
+                    state.4.extend(actions);
+                },
+                (
+                    page,
+                    crate::kit::Look::default(),
+                    ProjectsPreferences::default(),
+                    std::sync::Arc::new(store),
+                    Vec::new(),
+                ),
+            );
+        let by = |id: &'static str| By::new().predicate(move |node| node.author_id() == Some(id));
+        /// Step until the brand kit worker has answered every request sent so far.
+        fn settle(harness: &mut Harness<'_, Fixture>) {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                harness.run_steps(1);
+                let brand = &harness.state().0.brand;
+                if brand.loaded && !brand.busy() {
+                    return;
+                }
+                assert!(std::time::Instant::now() < deadline, "brand kit worker");
+                std::thread::yield_now();
+            }
+        }
+        harness.run_steps(2);
+        assert!(
+            !harness.state().0.brand.loaded && !harness.state().0.brand.busy(),
+            "drawing Home reads no kit file before the page opens"
+        );
+        harness.get(by("home.nav.brand_kit")).click();
+        settle(&mut harness);
+        assert!(harness.state().0.brand_open);
+
+        harness.get(by("brand_kit.images.add")).click();
+        harness.run_steps(2);
+        assert_eq!(
+            harness.state().4,
+            [Action::PickBrandMedia(BrandMediaSection::Image)]
+        );
+        harness
+            .state_mut()
+            .0
+            .brand_media_picked(BrandMediaSection::Image, vec![logo]);
+        settle(&mut harness);
+        let kit = harness
+            .state()
+            .0
+            .brand
+            .kit
+            .clone()
+            .expect("a kit made active");
+        assert_eq!(kit.media.len(), 1);
+        assert_eq!(
+            (kit.media[0].name.as_str(), kit.media[0].section),
+            ("logo.png", BrandMediaSection::Image)
+        );
+        assert!(harness.query(by("brand_kit.images.1")).is_some());
+
+        harness.get(by("brand_kit.images.1.menu")).click();
+        harness.run_steps(2);
+        harness.get(by("brand_kit.images.1.remove")).click();
+        settle(&mut harness);
+        assert!(
+            harness
+                .state()
+                .0
+                .brand
+                .kit
+                .as_ref()
+                .is_some_and(|kit| kit.media.is_empty())
+        );
+        assert!(harness.query(by("brand_kit.images.1")).is_none());
     }
 }

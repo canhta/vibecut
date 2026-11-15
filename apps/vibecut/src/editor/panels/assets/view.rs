@@ -5,13 +5,13 @@ mod browser;
 mod captions;
 mod deletion;
 mod effects;
-mod favorites;
 mod feedback;
 mod filters;
 mod rename;
 mod stickers;
 mod text;
 mod transition;
+mod yours;
 
 pub(in crate::editor) use deletion::show as delete_dialog;
 pub(in crate::editor) use feedback::{drop_overlay, import_overlay, toast};
@@ -167,13 +167,35 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                         view.state.media_section = MediaSection::Timeline;
                     }
                     view.remember("assets.subnav.timeline", &response, None);
-                    let label = view.tr(Text::AssetsFavorites);
-                    let response =
-                        view.nav_row(ui, label, section == MediaSection::Favorites, false);
-                    if response.clicked() {
-                        view.state.media_section = MediaSection::Favorites;
+                    // Yours heads the second group: Favorites, My presets and Brand assets, in
+                    // the reference's order (capture 110956).
+                    let label = view.tr(Text::AssetsYours);
+                    let response = view.nav_row(ui, label, false, true);
+                    view.remember("assets.subnav.yours", &response, None);
+                    for (page, label, id) in [
+                        (
+                            MediaSection::Favorites,
+                            Text::AssetsFavorites,
+                            "assets.subnav.favorites",
+                        ),
+                        (
+                            MediaSection::MyPresets,
+                            Text::AssetsMyPresets,
+                            "assets.subnav.my_presets",
+                        ),
+                        (
+                            MediaSection::BrandAssets,
+                            Text::AssetsBrandAssets,
+                            "assets.subnav.brand_assets",
+                        ),
+                    ] {
+                        let label = view.tr(label);
+                        let response = view.nav_row(ui, label, section == page, false);
+                        if response.clicked() {
+                            view.state.media_section = page;
+                        }
+                        view.remember(id, &response, None);
                     }
-                    view.remember("assets.subnav.favorites", &response, None);
                     return;
                 }
                 let is_text = cx.preferences.assets_tab == AssetsTab::Text;
@@ -208,6 +230,16 @@ pub(in crate::editor) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) 
                 if view.state.media_section == MediaSection::Favorites && nav.width() > 0.0 =>
             {
                 view.favorites(ui)
+            }
+            AssetsTab::Media
+                if view.state.media_section == MediaSection::MyPresets && nav.width() > 0.0 =>
+            {
+                view.my_presets(ui)
+            }
+            AssetsTab::Media
+                if view.state.media_section == MediaSection::BrandAssets && nav.width() > 0.0 =>
+            {
+                view.brand_assets(ui)
             }
             AssetsTab::Media if cx.rows.is_empty() && !cx.importing && !cx.failed => {
                 view.empty_media(ui)

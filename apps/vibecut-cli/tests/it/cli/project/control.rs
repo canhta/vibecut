@@ -18,10 +18,19 @@ pub(super) struct ControlSession {
 }
 impl ControlSession {
     pub(super) fn start(project: &Path, extra: &[&OsStr]) -> Self {
-        let mut child = Command::new(bin())
-            .arg("control")
-            .arg(project)
-            .args(extra)
+        Self::spawn(Command::new(bin()).arg("control").arg(project).args(extra))
+    }
+    /// A session whose user folder (and so its brand kits) is `home`.
+    fn start_with_home(project: &Path, home: &Path) -> Self {
+        Self::spawn(
+            Command::new(bin())
+                .arg("control")
+                .arg(project)
+                .env("HOME", home),
+        )
+    }
+    fn spawn(command: &mut Command) -> Self {
+        let mut child = command
             .env_remove("OPENAI_API_KEY")
             .env_remove("ELEVENLABS_API_KEY")
             .stdin(Stdio::piped())
@@ -1050,6 +1059,44 @@ fn control_lends_the_narrator_so_dub_generate_reaches_the_credential_check() {
     assert_eq!(response_error(&dub), "auth", "{dub}");
     let (code, stderr) = control.finish();
     assert_eq!(code, 5, "{stderr}");
+}
+
+/// Fails if the control session lends no brand kit store, or if `brand.copy_media` writes
+/// anywhere but the project's own media folder.
+#[test]
+fn control_lends_the_brand_kit_and_copies_into_the_project_media_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("brand.vibecut");
+    new_project(&project);
+    let logo = dir.path().join("logo.png");
+    fs::write(&logo, b"brand logo").unwrap();
+    let mut control = ControlSession::start_with_home(&project, &dir.path().join("home"));
+    let added = control.send(control_request(
+        "add",
+        "brand.add_media",
+        json!({"section":"image","path":logo,"name":"logo.png","kit_name":"Brand kit"}),
+        None,
+        None,
+    ));
+    assert_eq!(added["value"]["value"]["kind"], "brand_kit", "{added}");
+    let media = added["value"]["value"]["kit"]["media"][0]["id"].clone();
+    let copied = control.send(control_request(
+        "copy",
+        "brand.copy_media",
+        json!({"media": media}),
+        None,
+        None,
+    ));
+    assert_eq!(
+        copied["value"]["value"]["kind"], "brand_media_copied",
+        "{copied}"
+    );
+    let path = Path::new(copied["value"]["value"]["path"].as_str().unwrap()).to_owned();
+    let folder = project::media_dir(Some(project.as_path()));
+    assert_eq!(path.parent(), Some(folder.as_path()), "{copied}");
+    assert_eq!(fs::read(&path).unwrap(), b"brand logo");
+    let (code, stderr) = control.finish();
+    assert_eq!(code, 0, "{stderr}");
 }
 
 #[test]

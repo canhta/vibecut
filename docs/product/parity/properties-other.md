@@ -37,7 +37,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
 | PTEXT-04 | Text content box | Done | Proposed | 103613 | |
-| PTEXT-05 | Font dropdown | Done | Proposed | 103657-103714; [ui/editor.md](../ui/editor.md#font-picker) | |
+| PTEXT-05 | Font dropdown | Done | Proposed | 103657-103714; [ui/editor.md](../ui/editor.md#font-picker) | Brand kit families first |
 | PTEXT-06 | Font size | Done | Proposed | 103613 | |
 | PTEXT-07 | Bold, underline, italic | Done | Proposed | 103613 | |
 | PTEXT-08 | Case TT, tt, Tt | Done | Proposed | 103613 | |
@@ -53,7 +53,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | PTEXT-18 | Shadow controls | Done | Matches | 095914-095917 | |
 | PTEXT-19 | Curve (bend text) | Done | Matches | 14e/204153, 204212, 204225, 204229 | Degrees -360..360, default 72, centre tick. Rendered "Default text" at 50, 72, -50 and 360 beside the shots: circle fits to the ink envelope span 80.4, 86.0, 78.1 degrees against the reference 80.2, 86.8, 82.1; 360 closes the circle in both |
 | PTEXT-20 | Colour picker popover | Done | Proposed | 095732-095751 | |
-| PTEXT-21 | Save as preset | Done | Proposed | 103808 | |
+| PTEXT-21 | Save as preset | Done | Proposed | 103808 | Reference notice before saving |
 
 ### Bubble, Effects, Animation, Tracking, TTS
 | ID | Item | Function | UI/UX | Evidence | Gap / note |

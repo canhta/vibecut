@@ -122,6 +122,8 @@ stdout is newline-delimited JSON (`--json` implied). Each line is the engine `Re
 
 The session ticks the engine job runner between requests. `preview` and `export` return job IDs; poll `job_status` (including retained inline preview JPEGs) and use `job_cancel` for graceful cancellation. `preview.snapshot {time, path}` is synchronous: it renders the frame at canvas size through the production compositor and publishes a PNG atomically without changing project bytes; the active project and metadata paths are protected, so an aliasing destination is refused. EOF cancels and joins outstanding jobs through the publication fence. There is no signal handler: interruption has crash semantics, the OS releases the lease and unsaved edits are lost.
 
+The `brand.*` commands act on the user's brand kits, the store the desktop app keeps (`brand_kits` in the [user config folder](../../../crates/engine/src/runtime/README.md#user-config-location), [brand kit](../../../crates/libraries/src/brand_kit/README.md#control)); `mcp` and `agent` lend the same store the same way. The session opens it for each `brand.*` request only and releases it after, so it never blocks the app between requests; while the app is running it holds the store and these commands refuse `unavailable`/5. `brand.copy_media {media}` copies the kit file into `<project>.media/` beside the project and returns the new path; the folder is the session's, never a parameter.
+
 ## Batch job files
 
 `batch <job-file> [--allow-degraded] [--allow-overwrite]` renders an ordered set of saved projects through the `export` job path. It never edits or saves a project, loads each distinct project once as an immutable snapshot before any job is submitted, and does no network, provider, download or subtitle work.

@@ -55,10 +55,22 @@ pub struct BrandColorView {
 pub struct BrandMediaView {
     pub id: u64,
     pub name: String,
+    pub section: BrandMediaSection,
     /// Lowercase SHA-256 of the stored bytes, which is also the stored file's name.
     pub sha256: String,
     pub size: u64,
     pub state: BrandEntryState,
+}
+
+/// The brand kit page section a media file is filed under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BrandMediaSection {
+    Video,
+    Image,
+    Sticker,
+    Background,
+    Music,
 }
 
 /// Whether a stored kit file is present and matches its recorded hash and size.

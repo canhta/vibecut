@@ -1,7 +1,7 @@
 # Media library
 
 Interface: `MediaView`, `MediaSort`, `MediaSortKey`, `MediaSortOrder`, `MediaKind`, `display_name`,
-`next_sort`, `ordered_assets`, `file_size`.
+`next_sort`, `ordered_assets`, `file_size`, and the Brand assets owner `brand::BrandAssets`.
 
 The Media tab is the live asset library. Grid and list share one persisted mode. The
 sort dropdown orders by name, type, duration or file size, flips direction on the active
@@ -56,3 +56,17 @@ Thumbnail retention and its leases belong to
 [engine artifacts](../../../../../../../crates/engine/src/artifacts/README.md).
 
 A non-generated asset whose source file is gone draws its tile with the missing body fill and one centred `Media missing` line in place of a thumbnail (`AssetRow::missing`, read from `VisualQuery::availability` while the rows are projected); the rest of the tile is unchanged. Measurements: [Missing media](../../../../../../../docs/product/ui/editor.md#missing-media).
+
+`brand` owns the Brand assets page's work on the lent brand kit store: the `brand.list`
+command (which hashes every kit file, so it runs on a thread the frame polls), sent when the
+page first shows and on its refresh icon, and the `brand.copy_media` command a row click or
+a row drag released over the timeline sends. A drag is a Media drag (`DragSource::Brand`):
+the timeline resolves its landing at the same drop seam as project assets, without Replace,
+since the file has no probed duration yet; music lands on audio tracks, every other section
+on video tracks. The copy goes into the project's media folder (the session's, set through
+`Session::set_media_dir`; the command names none) under the entry's name, made unique and
+safe for every filesystem, and is verified against the kit's hash; it then enters the paste
+import, which inserts it at the playhead the click saw, or at the drop's time and placement.
+The project names its own copy and never the kit's stored file, so later kit edits leave it
+unchanged. A missing or damaged kit file, a copy already running or an import in progress
+refuses with a toast.

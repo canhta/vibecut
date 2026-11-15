@@ -57,6 +57,9 @@ pub fn poll_workspace(workspace: &mut Workspace, inbox: &mut mcp::Inbox) -> Resu
             )))?;
         editor
             .activate_with(None, |editor| {
+                // `brand.copy_media` writes into this project's own media folder.
+                let media = project::media_dir(editor.session.saved_path());
+                editor.session.set_media_dir(media)?;
                 Ok(inbox.execute_project(&mut editor.session, value, |_, _| {
                     Err(engine::control::Error::Control(
                         engine::control::ControlError::Permission,

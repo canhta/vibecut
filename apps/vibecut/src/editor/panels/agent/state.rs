@@ -104,6 +104,8 @@ pub(in crate::editor) struct State {
     pub(super) notice: Option<Text>,
     last_prompt: Option<String>,
     pub(super) ctx: Option<egui::Context>,
+    /// The user's brand kits, lent to each turn's `brand.*` commands.
+    brand: Option<Arc<libraries::brand_kit::BrandKit>>,
 }
 
 impl Default for State {
@@ -129,6 +131,7 @@ impl Default for State {
             notice: None,
             last_prompt: None,
             ctx: None,
+            brand: None,
         }
     }
 }
@@ -160,6 +163,11 @@ impl State {
     /// Lend the provider seam; tests lend a scripted one.
     pub(in crate::editor) fn set_backend(&mut self, backend: Arc<dyn Backend>) {
         self.backend = backend;
+    }
+
+    /// Lend the user's brand kits to the turns' `brand.*` commands.
+    pub(in crate::editor) fn set_brand_kit(&mut self, kit: Arc<libraries::brand_kit::BrandKit>) {
+        self.brand = Some(kit);
     }
 
     /// Keep this project's transcript under `dir` and show what it saved before.
@@ -384,6 +392,7 @@ impl State {
             sent.clone(),
             conversation,
             budget.clone(),
+            self.brand.clone(),
             self.ctx.clone(),
         ) {
             Some(running) => {

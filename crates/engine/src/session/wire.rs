@@ -26,12 +26,12 @@ pub(crate) use ledger::{Ledger, Receipt};
 pub use limits::*;
 pub use results::{ControlResult, JobOutput, JobView, ProviderView, ResultKind, TranscriptHit};
 pub use views::{
-    BrandColorView, BrandEntryState, BrandKitView, BrandMediaView, CaptionsResult, ChangeKind,
-    ChapterSidecars, CorrectionKind, CostView, DetectionResult, EmphasisSuggestion,
-    FillerCandidate, FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobId, JobKind,
-    JobStage, JobState, LoudnessResult, Measured, MusicEntry, MusicPage, MusicSource, OutputSpan,
-    PauseCandidates, PreviewFrame, PreviewResult, ReframeReason, ReframeReport, ReframeShotReport,
-    ReframeTarget, SavedMusicEntry, SavedSoundEntry, SceneCandidate, SnapshotResult, SoundEntry,
-    SoundPage, SoundSource, StickerCategory, StickerEntry, StickerPage, TextLibraryEntry,
-    TranslationsResult,
+    BrandColorView, BrandEntryState, BrandKitView, BrandMediaSection, BrandMediaView,
+    CaptionsResult, ChangeKind, ChapterSidecars, CorrectionKind, CostView, DetectionResult,
+    EmphasisSuggestion, FillerCandidate, FontEntry, FontLoad, FontLoadState, FontOrigin, FontState,
+    JobId, JobKind, JobStage, JobState, LoudnessResult, Measured, MusicEntry, MusicPage,
+    MusicSource, OutputSpan, PauseCandidates, PreviewFrame, PreviewResult, ReframeReason,
+    ReframeReport, ReframeShotReport, ReframeTarget, SavedMusicEntry, SavedSoundEntry,
+    SceneCandidate, SnapshotResult, SoundEntry, SoundPage, SoundSource, StickerCategory,
+    StickerEntry, StickerPage, TextLibraryEntry, TranslationsResult,
 };

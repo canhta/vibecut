@@ -1,7 +1,7 @@
 //! Brand kit store: kit lifecycle, ordered entries, verified media, limits and folder archives.
 #![allow(clippy::unwrap_used, clippy::panic)]
 use engine::BrandKitError;
-use engine::control::BrandEntryState;
+use engine::control::{BrandEntryState, BrandMediaSection};
 use libraries::brand_kit::{BrandKit, MAX_ENTRIES, MAX_KITS, MAX_NAME_BYTES};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -111,6 +111,7 @@ fn colours_and_fonts_keep_insertion_order_and_refuse_duplicates_and_absent_names
     ));
 }
 
+/// Fails if a kit file is listed, renamed or copied out without its section and verification.
 #[test]
 fn media_is_copied_and_verified_and_a_missing_or_corrupt_file_stays_listed() {
     let dir = tempfile::tempdir().unwrap();
@@ -119,19 +120,42 @@ fn media_is_copied_and_verified_and_a_missing_or_corrupt_file_stays_listed() {
     let kit = store(dir.path());
     let id = kit.create("Brand").unwrap();
     kit.set_active(Some(id)).unwrap();
-    let media_id = kit.add_media(id, &logo, "logo.svg").unwrap();
+    let media_id = kit
+        .add_media(id, BrandMediaSection::Sticker, &logo, "logo.svg")
+        .unwrap();
 
     let view = kit.active_view().unwrap().unwrap();
     assert_eq!(view.media.len(), 1);
     assert_eq!(view.media[0].id, media_id);
+    assert_eq!(view.media[0].section, BrandMediaSection::Sticker);
     assert_eq!(view.media[0].size, 6);
     assert_eq!(view.media[0].sha256, sha256_hex(b"<svg/>"));
     assert_eq!(view.media[0].state, BrandEntryState::Available);
+
+    kit.rename_media(id, media_id, "Mark").unwrap();
+    assert_eq!(kit.active_view().unwrap().unwrap().media[0].name, "Mark");
+    assert!(matches!(
+        kit.rename_media(id, media_id + 1, "Other").unwrap_err(),
+        BrandKitError::NotFound
+    ));
+    let copy = sources.path().join("project-copy.svg");
+    kit.copy_media(id, media_id, &copy).unwrap();
+    assert_eq!(fs::read(&copy).unwrap(), b"<svg/>");
+    assert!(matches!(
+        kit.copy_media(id, media_id, &copy).unwrap_err(),
+        BrandKitError::Invalid(_)
+    ));
 
     let stored = dir.path().join("media").join(&view.media[0].sha256);
     fs::write(&stored, b"tampered-bytes").unwrap();
     let corrupt = kit.active_view().unwrap().unwrap();
     assert_eq!(corrupt.media[0].state, BrandEntryState::Corrupt);
+    let refused = sources.path().join("refused.svg");
+    assert!(matches!(
+        kit.copy_media(id, media_id, &refused).unwrap_err(),
+        BrandKitError::Integrity
+    ));
+    assert!(!refused.exists(), "a failed copy leaves nothing behind");
 
     fs::remove_file(&stored).unwrap();
     let missing = kit.active_view().unwrap().unwrap();
@@ -139,7 +163,8 @@ fn media_is_copied_and_verified_and_a_missing_or_corrupt_file_stays_listed() {
     assert_eq!(missing.media[0].state, BrandEntryState::Missing);
 
     assert!(matches!(
-        kit.add_media(id, sources.path(), "folder").unwrap_err(),
+        kit.add_media(id, BrandMediaSection::Image, sources.path(), "folder")
+            .unwrap_err(),
         BrandKitError::Invalid(_)
     ));
     kit.remove_media(id, media_id).unwrap();
@@ -170,7 +195,8 @@ fn archive_round_trips_byte_equal_and_refuses_unverified_or_escaping_records() {
     let id = kit.create("Brand").unwrap();
     kit.add_color(id, "Lime", [1, 2, 3, 4]).unwrap();
     let logo = source_file(sources.path(), "mark.svg", b"<svg>mark</svg>");
-    kit.add_media(id, &logo, "mark.svg").unwrap();
+    kit.add_media(id, BrandMediaSection::Image, &logo, "mark.svg")
+        .unwrap();
 
     let out = dir.path().join("archive");
     kit.export_kit(id, &out).unwrap();

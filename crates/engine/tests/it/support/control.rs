@@ -999,9 +999,27 @@ pub(crate) fn fake_sticker_resolve(
 fn fake_brand_list() -> engine::control::Result<Option<engine::control::BrandKitView>> {
     Ok(None)
 }
-/// A brand kit lend with no active kit, so `brand.list` answers without a store.
-pub(crate) fn brand_access() -> engine::control::BrandAccess<'static> {
-    engine::control::BrandAccess::new(&fake_brand_list)
+fn fake_brand_edit(
+    _: engine::control::BrandEdit,
+) -> engine::control::Result<Option<engine::control::BrandKitView>> {
+    Ok(None)
+}
+fn fake_brand_copy(
+    media: u64,
+    dir: &std::path::Path,
+) -> engine::control::Result<std::path::PathBuf> {
+    Ok(dir.join(format!("brand-{media}")))
+}
+/// A brand kit store with no active kit, so the `brand.*` commands answer without a store.
+pub(crate) struct FakeBrand;
+impl engine::control::BrandStore for FakeBrand {
+    fn lend(&self, serve: &mut dyn FnMut(&engine::control::BrandAccess<'_>)) {
+        serve(&engine::control::BrandAccess::new(
+            &fake_brand_list,
+            &fake_brand_edit,
+            &fake_brand_copy,
+        ));
+    }
 }
 pub(crate) fn sticker_access() -> engine::control::StickerAccess<'static> {
     engine::control::StickerAccess::new(&fake_sticker_search, &fake_sticker_resolve)

@@ -3,11 +3,11 @@ use crate::jobs::{JobId, JobRunner};
 use crate::{Command, Session};
 
 pub use crate::session::wire::{
-    API_VERSION, BrandColorView, BrandEntryState, BrandKitView, BrandMediaView, CaptionsResult,
-    ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy, ClipExportShort, ClipPieceRange,
-    ClipPieceSpan, ClipRefusal, ClipShotsDiagnostic, ClipSubtitleFile, ClipsResult, ControlError,
-    ControlResult, CostView, Cursor, ErrorCode, Event, Failure, FillerCandidate, FontEntry,
-    FontLoad, FontLoadState, FontOrigin, FontState, JobOutput, JobView, LIMITS, Limits,
+    API_VERSION, BrandColorView, BrandEntryState, BrandKitView, BrandMediaSection, BrandMediaView,
+    CaptionsResult, ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy, ClipExportShort,
+    ClipPieceRange, ClipPieceSpan, ClipRefusal, ClipShotsDiagnostic, ClipSubtitleFile, ClipsResult,
+    ControlError, ControlResult, CostView, Cursor, ErrorCode, Event, Failure, FillerCandidate,
+    FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobOutput, JobView, LIMITS, Limits,
     MAX_BATCH_COMMANDS, MAX_BATCH_DEPTH, MAX_COLLECTION, MAX_DEPTH, MAX_EVENTS, MAX_FRAME_BYTES,
     MAX_KEY_BYTES, MAX_NODES, MAX_PATH_BYTES, MAX_PAUSE_MS, MAX_PAUSE_SPANS, MAX_PREVIEW_CLIPS,
     MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_RECEIPT_BYTES, MAX_RECEIPTS, MAX_RESPONSE_BYTES,
@@ -210,17 +210,75 @@ impl<'a> FontAccess<'a> {
         }
     }
 }
-/// The brand kit operation the process lends to control commands: the active kit's
-/// contents, or `None` when no kit is active. It is composition state borrowed for one
-/// request; the kernel owns no store and copies nothing into a project.
+/// One edit of the active brand kit a `brand.*` command asks of the lent store. The adds
+/// create the kit `kit_name` and make it active when no kit is active; the others refuse
+/// `NotFound` without an active kit.
+#[derive(Clone, Debug)]
+pub enum BrandEdit {
+    AddFont {
+        family: String,
+        kit_name: String,
+    },
+    AddMedia {
+        section: BrandMediaSection,
+        path: std::path::PathBuf,
+        name: String,
+        kit_name: String,
+    },
+    RenameMedia {
+        media: u64,
+        name: String,
+    },
+    RemoveMedia {
+        media: u64,
+    },
+    RemoveFont {
+        family: String,
+    },
+}
+/// The brand kit operations the process lends to control commands. It is composition state
+/// borrowed for one request; the kernel owns no store and copies nothing into a project.
 #[derive(Clone, Copy)]
 pub struct BrandAccess<'a> {
     list: &'a dyn Fn() -> Result<Option<BrandKitView>>,
+    edit: &'a dyn Fn(BrandEdit) -> Result<Option<BrandKitView>>,
+    copy: &'a dyn Fn(u64, &std::path::Path) -> Result<std::path::PathBuf>,
 }
 impl<'a> BrandAccess<'a> {
-    pub fn new(list: &'a dyn Fn() -> Result<Option<BrandKitView>>) -> Self {
-        Self { list }
+    /// `list` serves `brand.list` (the active kit, or `None`); `edit` serves the edits and
+    /// returns the active kit after them; `copy` serves `brand.copy_media`, copying one
+    /// active-kit file into the session's media folder and returning the new file's path.
+    pub fn new(
+        list: &'a dyn Fn() -> Result<Option<BrandKitView>>,
+        edit: &'a dyn Fn(BrandEdit) -> Result<Option<BrandKitView>>,
+        copy: &'a dyn Fn(u64, &std::path::Path) -> Result<std::path::PathBuf>,
+    ) -> Self {
+        Self { list, edit, copy }
     }
+}
+impl BrandAccess<'static> {
+    /// The access a store that did not open lends: every `brand.*` command refuses
+    /// [`crate::BrandKitError::Unavailable`].
+    pub fn unavailable() -> Self {
+        Self::new(&unavailable_list, &unavailable_edit, &unavailable_copy)
+    }
+}
+fn unavailable_list() -> Result<Option<BrandKitView>> {
+    Err(crate::BrandKitError::Unavailable.into())
+}
+fn unavailable_edit(_: BrandEdit) -> Result<Option<BrandKitView>> {
+    Err(crate::BrandKitError::Unavailable.into())
+}
+fn unavailable_copy(_: u64, _: &std::path::Path) -> Result<std::path::PathBuf> {
+    Err(crate::BrandKitError::Unavailable.into())
+}
+/// A brand kit store a composition root lends to control callers. Dispatch calls `lend` once
+/// per `brand.*` command, so a store may be opened for that command and released after it;
+/// other commands never touch it.
+pub trait BrandStore {
+    /// Serve one command with this store's operations. An implementation calls `serve` exactly
+    /// once, with [`BrandAccess::unavailable`] when its store cannot open.
+    fn lend(&self, serve: &mut dyn FnMut(&BrandAccess<'_>));
 }
 /// The three sound-library operations the process lends to control commands. The
 /// access object owns the library root and the provider credential, so the command
@@ -371,9 +429,9 @@ pub struct Caller<'a> {
     /// The process sticker catalog behind `stickers.search` and `stickers.insert`. Without it
     /// those commands refuse `Unsupported`.
     pub stickers: Option<&'a StickerAccess<'a>>,
-    /// The process brand kit store behind `brand.list`. Without it that command refuses
-    /// [`crate::BrandKitError::Unavailable`].
-    pub brand: Option<&'a BrandAccess<'a>>,
+    /// The user's brand kit store behind the `brand.*` commands, lent once per such command.
+    /// Without it they refuse [`crate::BrandKitError::Unavailable`].
+    pub brand: Option<&'a dyn BrandStore>,
     /// The process artifact caches behind `media.generate_waveform` and
     /// `media.generate_clip_thumbnails`. Without them those commands refuse.
     /// One mutex instance is shared by the desktop timeline display and the

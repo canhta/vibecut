@@ -49,7 +49,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 ### Brand kit and onboarding
 | ID | Item | Function | UI/UX | Evidence | Gap / note |
 |---|---|---|---|---|---|
-| HOME-31 | Brand kit page | Partial | Not captured | 111111 | Store done, page open |
-| HOME-32 | Brand kit sections | Missing | Not captured | 111111 | Videos, images, fonts, music |
-| HOME-33 | Brand kit intro banner | Missing | Not captured | 111111 | |
+| HOME-31 | Brand kit page | Done | Differs | 111111; [ui/home.md](../ui/home.md#brand-kit-page) | Rail row; online space header not built |
+| HOME-32 | Brand kit sections | Done | Matches | 111111, 111120; [ui/home.md](../ui/home.md#brand-kit-page) | Six sections; filled tiles ours |
+| HOME-33 | Brand kit intro banner | Done | Differs | 111111; [ui/home.md](../ui/home.md#brand-kit-page) | Trial line, illustration not built |
 | HOME-34 | Onboarding and tour | Ours | Proposed | `apps/vibecut/src/home/view/welcome.rs` | Three-step welcome shown once (`ui.onboarding.reset` shows it again); no tour |

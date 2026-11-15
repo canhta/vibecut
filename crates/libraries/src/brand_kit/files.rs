@@ -114,6 +114,29 @@ pub(super) fn import_media(root: &Path, source: &Path) -> Result<(String, u64)> 
     Ok((sha256, size))
 }
 
+/// Copies the stored file of `media` to `dest`, which must not exist, and verifies the copy
+/// against the record. Any failure removes what was written at `dest`.
+pub(super) fn export_media(root: &Path, media: &Media, dest: &Path) -> Result<()> {
+    let stored = media_path(root, &media.sha256);
+    if !stored.is_file() {
+        return Err(BrandKitError::Integrity);
+    }
+    if dest.exists() {
+        return Err(BrandKitError::Invalid("copy destination"));
+    }
+    match copy_hashed(&stored, dest) {
+        Ok((sha256, size)) if sha256 == media.sha256 && size == media.size => Ok(()),
+        Ok(_) => {
+            let _ = fs::remove_file(dest);
+            Err(BrandKitError::Integrity)
+        }
+        Err(error) => {
+            let _ = fs::remove_file(dest);
+            Err(error.into())
+        }
+    }
+}
+
 /// Whether `path` is a regular file whose bytes hash to `sha256` at exactly `size` bytes.
 pub(super) fn source_matches(path: &Path, size: u64, sha256: &str) -> bool {
     match fs::metadata(path) {

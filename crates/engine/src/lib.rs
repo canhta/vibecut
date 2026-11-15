@@ -76,7 +76,7 @@ pub use ai::text::clips::{
 pub use captions::{AssWarning, AssWarningKind, Format, NfcText};
 pub use providers::models;
 
-pub use runtime::{default_file_name, sanitize_file_name};
+pub use runtime::{default_file_name, sanitize_file_name, user_config_dir};
 pub use subtitles::{AssImportReport, AssImportRequest, prepare_ass_import};
 
 pub use artifacts::Error as ArtifactError;

@@ -5,8 +5,8 @@ use crate::policy::{AgentPolicy, Reason};
 use crate::reads;
 use ai::text::conversation::{DataKind, ImageType, ToolImage, ToolSpec};
 use engine::control::{
-    API_VERSION, Caller, ControlResult, ErrorCode, Failure, JobOutput, JobView, Request,
-    ResponseValue, registry_hash,
+    API_VERSION, BrandStore, Caller, ControlResult, ErrorCode, Failure, JobOutput, JobView,
+    Request, ResponseValue, registry_hash,
 };
 use engine::jobs::{JobId, JobRunner, JobState};
 use engine::{Effect, Fork, Session, registry};
@@ -207,6 +207,8 @@ fn to_usize(value: u64) -> usize {
 pub(crate) struct Toolbox<'r> {
     fork: Fork,
     runner: &'r mut JobRunner,
+    /// The user's brand kit store, lent to each `brand.*` command the agent runs.
+    brand: Option<&'r dyn BrandStore>,
     policy: AgentPolicy,
     cancel: CancelFlag,
     allowed: BTreeSet<DataKind>,
@@ -218,12 +220,14 @@ impl<'r> Toolbox<'r> {
     pub(crate) fn new(
         fork: Fork,
         runner: &'r mut JobRunner,
+        brand: Option<&'r dyn BrandStore>,
         cancel: CancelFlag,
         allowed: BTreeSet<DataKind>,
     ) -> Self {
         Self {
             fork,
             runner,
+            brand,
             policy: AgentPolicy::new(allowed.contains(&DataKind::Frames)),
             cancel,
             allowed,
@@ -593,7 +597,7 @@ impl<'r> Toolbox<'r> {
             sounds: None,
             music: None,
             stickers: None,
-            brand: None,
+            brand: self.brand,
             media: None,
             chapters: None,
             captions: None,

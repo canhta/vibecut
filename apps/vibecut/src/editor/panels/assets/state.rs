@@ -64,8 +64,9 @@ pub(in crate::editor) struct State {
     pub(in crate::editor) drop_zone_pass: u64,
     /// The OS clipboard's file list, read on paste; tests inject a fixture reader.
     pub(in crate::editor) os_files: crate::services::clipboard::FileClipboard,
-    /// A paste import in flight: the playhead its probed files insert at.
-    pub(in crate::editor) paste_at: Option<super::Tick>,
+    /// A paste import in flight: where its probed files insert (the playhead with automatic
+    /// placement, or a brand kit drop's time and resolved placement).
+    pub(in crate::editor) paste_at: Option<(super::Tick, engine::Placement)>,
     /// Assets the current import batch added, in probe order.
     pub(in crate::editor) import_added: Vec<super::AssetId>,
     /// Filters tab: the chosen shelf and the tile preview owner, built when the tab first shows.
@@ -118,6 +119,8 @@ pub(in crate::editor) struct State {
     pub(super) media_open_folder: Option<project::MediaFolderId>,
     /// Media tab, Favorites page: the one catalogue family listed; `None` lists every family.
     pub(super) media_favorites_family: Option<&'static str>,
+    /// Media tab, Brand assets page: the lent brand kits, their listing and a copy in flight.
+    pub(in crate::editor) brand: Option<super::media_panel::brand::BrandAssets>,
     /// Media tab: the clip export owner, its queued request and running job.
     pub(in crate::editor) clip_exports: Option<super::media_panel::clips::ClipExports>,
     pub(in crate::editor) asset_states: BTreeMap<super::AssetId, AssetState>,
@@ -213,6 +216,7 @@ impl Default for State {
             media_rename: None,
             media_open_folder: None,
             media_favorites_family: None,
+            brand: None,
             clip_exports: None,
             asset_states: BTreeMap::new(),
             thumbnails: BTreeMap::new(),

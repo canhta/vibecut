@@ -80,6 +80,8 @@ pub(crate) fn run(
         crate::session::prepare_project_libraries(&loaded.project)?;
         let mut session = Session::new(loaded.project, 100)?;
         session.restore_metadata(lease.metadata())?;
+        // `brand.copy_media` writes only into the project's own media folder.
+        session.set_media_dir(project::media_dir(Some(path.as_path())))?;
         let mut saved_project = session.project().as_ref().clone();
         let mut saved_metadata = session.metadata().clone();
         let (mut handler, mut inbox) = Inbox::new(grants, context.budget()?).map_err(cli_error)?;
@@ -91,6 +93,8 @@ pub(crate) fn run(
         let shared = captions.cache().ok().cloned();
         inbox.attach_captions(std::sync::Arc::new(captions));
         inbox.attach_stickers(crate::session::sticker_lend());
+        // Opened for each `brand.*` request only, so the desktop app can hold it between.
+        inbox.attach_brand(std::sync::Arc::new(libraries::brand_kit::NativeBrandKit));
         inbox.attach_vision(std::sync::Arc::new(crate::session::vision_access(
             context.budget()?,
             shared,

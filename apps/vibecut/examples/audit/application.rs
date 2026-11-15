@@ -81,7 +81,11 @@ impl App {
     }
     fn busy(&self) -> bool {
         match self {
-            Self::Home { workspace, .. } => workspace.busy() || workspace.checking_for_update(),
+            Self::Home { workspace, .. } => {
+                workspace.busy()
+                    || workspace.checking_for_update()
+                    || workspace.projects.brand_busy()
+            }
             Self::Editor(_) | Self::Player(_) | Self::Assets(_) => false,
             Self::Shorts(shorts) => shorts.busy(),
         }
@@ -115,6 +119,8 @@ pub(crate) struct AuditApp {
     pub(crate) app: App,
     pub(super) _model_cache: Option<tempfile::TempDir>,
     pub(super) _sound_library: Option<tempfile::TempDir>,
+    /// The brand kit store an editor scene lends, kept for the harness's lifetime.
+    pub(super) _brand_kit: Option<tempfile::TempDir>,
 }
 impl AuditApp {
     pub(super) fn busy(&self) -> bool {
@@ -181,5 +187,6 @@ pub(super) fn harness_sized(app: App, scale: f32, size: [f32; 2]) -> AppHarness 
             app,
             _model_cache: None,
             _sound_library: None,
+            _brand_kit: None,
         })
 }

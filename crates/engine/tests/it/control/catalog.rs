@@ -6,7 +6,7 @@
     reason = "public-interface conformance assertions"
 )]
 use crate::support::control::Allow;
-use crate::support::control::brand_access;
+use crate::support::control::FakeBrand;
 use crate::support::control::caller;
 use crate::support::control::finish;
 use crate::support::control::fixture_chapters;
@@ -394,12 +394,15 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             }
             _ => {}
         }
+        // `brand.copy_media` writes only into the media folder the composition root sets.
+        s.set_media_dir(root.path().join("example.vibecut.media"))
+            .unwrap();
         let req = request(&s, spec.id, params, "example");
         let fonts = font_access();
         let sounds = sound_access();
         let music = music_access();
         let stickers = sticker_access();
-        let brand = brand_access();
+        let brand = FakeBrand;
         let result = s
             .control_request(
                 req,

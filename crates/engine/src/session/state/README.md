@@ -9,7 +9,7 @@ Every command entry (`apply`, the control adapter's wire entry, control) runs in
 | Restored | Kept as the command left it |
 |---|---|
 | project, undo and redo, selection, trim sources, ID counter, pending change | `generation`: lifetimes opened by the refused command stay retired |
-| gesture entry and the timeline-preview flag | `protected` paths: set only by `protect_paths` |
+| gesture entry and the timeline-preview flag | `protected` paths and the `media_dir` that `brand.copy_media` writes into: set only by `protect_paths` and `set_media_dir` |
 | ripple policy | `identity`, history `limit`: fixed at construction |
 | metadata (view state, scene views) | `grouping`: owned by `transaction` |
 | revision, ledger sequence and events | ledger receipts and jobs: written by `control` after the boundary |

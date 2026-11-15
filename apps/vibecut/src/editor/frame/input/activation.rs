@@ -47,7 +47,9 @@ impl Editor {
         }
         self.activate_with(None, |editor| {
             let at = editor.playback.position()?;
-            editor.with_assets(|assets, port| assets.paste_files(port, paths, at))
+            editor.with_assets(|assets, port| {
+                assets.paste_files(port, paths, at, engine::Placement::Auto)
+            })
         })?;
         Ok(true)
     }

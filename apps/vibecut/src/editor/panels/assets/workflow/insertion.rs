@@ -1,7 +1,8 @@
 //! Inserts chosen assets into the timeline.
 //!
-//! The Media-panel "+", a Media drag released over the lanes and a paste of OS files all
-//! resolve to `insert_assets`: one `timeline.insert` per asset in one transaction.
+//! The Media-panel "+", a Media drag released over the lanes, a paste of OS files and a
+//! copied brand kit file all resolve to `insert_assets`: one `timeline.insert` per asset in
+//! one transaction.
 
 use super::super::{
     AssetId, AssetState, BTreeSet, Command, CreatedId, ItemParams, NewItem, PathBuf, Result,
@@ -10,7 +11,7 @@ use super::super::{
 };
 use super::State;
 use crate::editor::Port;
-use crate::editor::context::MediaDrag;
+use crate::editor::context::{DragSource, MediaDrag};
 use crate::i18n;
 
 /// New text sits in the lower third: its box centre is this fraction of the canvas height
@@ -213,7 +214,10 @@ impl State {
                 .find(|asset| asset.id() == *first)
                 .and_then(|asset| asset_kind(asset).ok())
         });
-        self.media_drag = kind.map(|kind| MediaDrag { assets: ids, kind });
+        self.media_drag = kind.map(|kind| MediaDrag {
+            source: DragSource::Assets(ids),
+            kind,
+        });
     }
 
     /// The pointer let go with no timeline landing: the drag ends without an insert.
@@ -248,21 +252,28 @@ impl State {
         self.finish_insert(port, result);
     }
 
-    /// Paste with files on the OS clipboard: import them; the probed ones insert at the
-    /// playhead when the batch finishes (see `finish_import`).
+    /// Paste with files on the OS clipboard (or a copied brand kit file): import them; the
+    /// probed ones insert at `at` with `placement` when the batch finishes (see
+    /// `finish_import`).
     pub(in crate::editor) fn paste_files(
         &mut self,
         port: &mut Port<'_>,
         paths: Vec<PathBuf>,
         at: Tick,
+        placement: engine::Placement,
     ) -> Result<()> {
         self.start_import(port, paths)?;
-        self.paste_at = Some(at);
+        self.paste_at = Some((at, placement));
         Ok(())
     }
 
-    /// The batch a paste started has finished probing: insert what is ready at its playhead.
-    pub(in crate::editor) fn insert_pasted(&mut self, port: &mut Port<'_>, at: Tick) {
+    /// The batch a paste started has finished probing: insert what is ready where it asked.
+    pub(in crate::editor) fn insert_pasted(
+        &mut self,
+        port: &mut Port<'_>,
+        at: Tick,
+        placement: engine::Placement,
+    ) {
         let ids = std::mem::take(&mut self.import_added);
         let assets: Vec<SourceAsset> = port
             .session
@@ -280,7 +291,7 @@ impl State {
         if assets.is_empty() {
             return;
         }
-        let result = self.insert_assets(port, &assets, at, engine::Placement::Auto);
+        let result = self.insert_assets(port, &assets, at, placement);
         self.finish_insert(port, result);
     }
 

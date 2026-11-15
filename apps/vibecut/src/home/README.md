@@ -3,6 +3,21 @@
 Interface: `State`, `Action`, `Context`, `show`, `WINDOW`, `ProjectsPreferences`,
 `ProjectsSortKey`, `ProjectsView`, `Catalog`.
 
+The rail's Brand kit row swaps the projects page for the brand kit page (`brand_kit.rs` holds
+its state and worker, `view/brand_kit.rs` draws it). The composition root lends the user's
+brand kit store through `Context::brand`; every listing and edit is a registry `brand.*`
+command (`brand.list`, `brand.add_media`, `brand.rename_media`, `brand.remove_media`,
+`brand.add_font`, `brand.remove_font`) sent through `services::assets::brand` on one worker
+thread, because a listing hashes each kit file; each edit answers with the kit after it.
+Nothing is read while Home draws: the worker and the first listing start when the page first
+opens, and each later open lists again. Sections Videos, Images, Stickers, Fonts, Backgrounds and Music each list their
+entries and an add tile. A file section's add tile returns `Action::PickBrandMedia`; the
+root opens a native picker for that kind and hands the answer to `State::brand_media_picked`,
+which stores each file under its file name made unique among the kit's media. Fonts' add tile
+opens a family chooser over the font store's families. A tile's menu renames (files) or removes
+the entry. With no active kit, the first add creates one named `Brand kit` and makes it active.
+A store that did not open, or an edit the store refuses, shows one line under the intro.
+
 `show(state, Context, ui)` draws the whole window and returns the lifecycle `Action`s the composition root must
 carry out. The page never loads or mutates project JSON: a catalog worker runs every
 `project.create`, `project.duplicate`, `project.rename`, `project.delete`, `project.restore`,

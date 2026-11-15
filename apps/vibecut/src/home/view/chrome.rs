@@ -1,7 +1,7 @@
 //! Draws the Home rail and the top band that sit around the page.
 
 use super::{
-    RAIL_INSET, RAIL_ROW, RAIL_RULE_GAP, ROW_RADIUS, TOP_BAND,
+    RAIL_INSET, RAIL_PITCH, RAIL_ROW, RAIL_RULE_GAP, ROW_RADIUS, TOP_BAND,
     widgets::{line, semibold, set_author_id},
 };
 use crate::i18n;
@@ -52,14 +52,26 @@ fn nav_row(
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-/// The left rail: Home, a rule, then the tools that open their own window.
+/// The left rail: Home, a rule, then the tools that open their own window and the Brand kit
+/// page. Rows sit on the measured 44 px pitch.
 pub(super) fn rail(ui: &mut egui::Ui, rail: egui::Rect, state: &mut State, locale: Locale) {
     let dark = ui.visuals().dark_mode;
     let tr = |key: Text| i18n::text(locale, key);
     let row =
         |y: f32| egui::Rect::from_min_size(egui::pos2(rail.min.x + RAIL_INSET, y), RAIL_ROW.into());
     let home = row(rail.min.y + TOP_BAND);
-    nav_row(ui, "home.nav.home", home, Icon::House, tr(Text::Home), true);
+    if nav_row(
+        ui,
+        "home.nav.home",
+        home,
+        Icon::House,
+        tr(Text::Home),
+        !state.brand_open,
+    )
+    .clicked()
+    {
+        state.brand_open = false;
+    }
     let rule_y = home.max.y + RAIL_RULE_GAP;
     ui.painter().hline(
         home.x_range(),
@@ -78,6 +90,23 @@ pub(super) fn rail(ui: &mut egui::Ui, rail: egui::Rect, state: &mut State, local
     .clicked()
     {
         state.action = Some(Action::Shorts);
+    }
+    let brand = row(shorts.min.y + RAIL_PITCH);
+    if nav_row(
+        ui,
+        "home.nav.brand_kit",
+        brand,
+        Icon::BookmarkSimple,
+        tr(Text::BrandKit),
+        state.brand_open,
+    )
+    .clicked()
+    {
+        if !state.brand_open {
+            let budget = state.budget.clone();
+            state.brand.open(&budget);
+        }
+        state.brand_open = true;
     }
 }
 

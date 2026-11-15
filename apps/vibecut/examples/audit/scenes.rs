@@ -514,6 +514,18 @@ pub(super) const SCENES: &[Scene] = &[
         build: projects_trash,
     },
     Scene {
+        name: "home-brand-kit",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-111111.png"),
+        reference_light: Some("capcut-desktop-2026-11-14b/capcut-desktop-111111.png"),
+        build: home_brand_kit,
+    },
+    Scene {
+        name: "home-brand-kit-filled",
+        reference_dark: None,
+        reference_light: None,
+        build: home_brand_kit_filled,
+    },
+    Scene {
         name: "editor-empty",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
@@ -542,6 +554,18 @@ pub(super) const SCENES: &[Scene] = &[
         reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-111010.png"),
         reference_light: Some("capcut-desktop-2026-11-14b/capcut-desktop-111010.png"),
         build: editor_media_favorites,
+    },
+    Scene {
+        name: "editor-media-brand-assets",
+        reference_dark: Some("capcut-desktop-2026-11-14b/capcut-desktop-111016.png"),
+        reference_light: Some("capcut-desktop-2026-11-14b/capcut-desktop-111016.png"),
+        build: editor_media_brand_assets,
+    },
+    Scene {
+        name: "editor-media-brand-assets-filled",
+        reference_dark: None,
+        reference_light: None,
+        build: editor_media_brand_assets_filled,
     },
     Scene {
         name: "editor-transitions",
@@ -1156,12 +1180,16 @@ mod timeline;
 use assets::assets_scene;
 use editor::{
     about_dialog, caption_word_scene, captions_review_scene, captions_scene, editor_empty,
-    editor_frame_state, editor_media, editor_media_favorites, editor_media_folder,
-    editor_media_menu, editor_transitions, export_audio_only, export_cover, export_custom_bit_rate,
-    export_dialog, export_gif, export_resolution, import_progress, models, models_vi, player_scene,
-    player_variant, settings_dialog,
+    editor_frame_state, editor_media, editor_media_brand_assets, editor_media_brand_assets_filled,
+    editor_media_favorites, editor_media_folder, editor_media_menu, editor_transitions,
+    export_audio_only, export_cover, export_custom_bit_rate, export_dialog, export_gif,
+    export_resolution, import_progress, models, models_vi, player_scene, player_variant,
+    settings_dialog,
 };
-use home::{home, home_notices, home_projects, home_welcome, projects_scene, projects_trash};
+use home::{
+    home, home_brand_kit, home_brand_kit_filled, home_notices, home_projects, home_welcome,
+    projects_scene, projects_trash,
+};
 pub(crate) use properties::inspector_mixed_vi;
 use properties::{
     close_prompt, close_prompt_vi, import_complete_vi, inspector_adjust_mask, inspector_audio,

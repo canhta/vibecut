@@ -2,9 +2,10 @@
 //! is down, and a release over the lanes inserts the dragged assets. A single asset over an
 //! occupied clip of its kind labels the clip `Replace`; releasing it shorter than that clip
 //! changes nothing and toasts why, and releasing it equal or longer replaces the clip with
-//! `timeline.replace_media`.
+//! `timeline.replace_media`. A brand kit file lands the same way, minus Replace, and asks
+//! the frame to copy it into the project and insert the copy at the resolved landing.
 
-use crate::editor::context::MediaDrag;
+use crate::editor::context::{DragSource, MediaDrag};
 use crate::editor::timeline::{
     Action, Context, DropZone, ItemId, ItemView, State, Text, TimelineLayout, TrackRow, egui, theme,
 };
@@ -51,25 +52,38 @@ impl State {
             self.drop_zone = None;
             self.replace_hint = None;
             if let (Some(pointer), Some(landing)) = (pointer, landing) {
-                if let (Some(occupied), [asset]) = (landing.occupied, drag.assets.as_slice()) {
-                    if occupied.shorter {
-                        self.push(Action::Toast(
-                            i18n::text(cx.locale, Text::ReplaceTooShort).to_owned(),
-                        ));
-                    } else {
-                        self.push(Action::Command(Box::new(engine::Command::ReplaceMedia {
-                            items: vec![occupied.item],
-                            asset: *asset,
-                        })));
-                    }
-                    return;
-                }
                 let at = self.tick_at(pointer.x, layout.body.left());
-                self.push(Action::InsertMedia {
-                    assets: drag.assets.clone(),
-                    at,
-                    placement: landing.placement,
-                });
+                match &drag.source {
+                    DragSource::Assets(assets) => {
+                        if let (Some(occupied), [asset]) = (landing.occupied, assets.as_slice()) {
+                            if occupied.shorter {
+                                self.push(Action::Toast(
+                                    i18n::text(cx.locale, Text::ReplaceTooShort).to_owned(),
+                                ));
+                            } else {
+                                self.push(Action::Command(Box::new(
+                                    engine::Command::ReplaceMedia {
+                                        items: vec![occupied.item],
+                                        asset: *asset,
+                                    },
+                                )));
+                            }
+                            return;
+                        }
+                        self.push(Action::InsertMedia {
+                            assets: assets.clone(),
+                            at,
+                            placement: landing.placement,
+                        });
+                    }
+                    // A kit file is not in the project yet: the frame copies and imports it,
+                    // then inserts it here.
+                    DragSource::Brand { media, .. } => self.push(Action::InsertBrandMedia {
+                        media: *media,
+                        at,
+                        placement: landing.placement,
+                    }),
+                }
             }
             return;
         }
@@ -130,7 +144,11 @@ impl State {
         layout: &TimelineLayout,
         items: &[ItemView],
     ) -> Option<Occupied> {
-        let [dragged] = drag.assets.as_slice() else {
+        // Only a project asset can replace a clip; a kit file has no probed duration yet.
+        let DragSource::Assets(assets) = &drag.source else {
+            return None;
+        };
+        let [dragged] = assets.as_slice() else {
             return None;
         };
         let at = self.tick_at(pointer.x, layout.body.left());
@@ -193,16 +211,20 @@ fn new_track_landing(
 
 /// The dragged asset's name beside the pointer, on a layer above the panels.
 fn paint_ghost(cx: &Context<'_>, ui: &egui::Ui, drag: &MediaDrag, pointer: egui::Pos2) {
-    let data = cx.session.project().data();
-    let name = drag
-        .assets
-        .first()
-        .and_then(|id| data.assets.iter().find(|asset| asset.id() == *id))
-        .map_or_else(String::new, |asset| data.media_library.display_name(asset));
-    let label = if drag.assets.len() > 1 {
-        format!("{name} +{}", drag.assets.len() - 1)
-    } else {
-        name
+    let label = match &drag.source {
+        DragSource::Assets(assets) => {
+            let data = cx.session.project().data();
+            let name = assets
+                .first()
+                .and_then(|id| data.assets.iter().find(|asset| asset.id() == *id))
+                .map_or_else(String::new, |asset| data.media_library.display_name(asset));
+            if assets.len() > 1 {
+                format!("{name} +{}", assets.len() - 1)
+            } else {
+                name
+            }
+        }
+        DragSource::Brand { name, .. } => name.clone(),
     };
     let painter = ui.ctx().layer_painter(egui::LayerId::new(
         egui::Order::Tooltip,

@@ -36,6 +36,10 @@ pub enum ControlResult {
     BrandKit {
         kit: Option<BrandKitView>,
     },
+    /// The project-side copy `brand.copy_media` wrote.
+    BrandMediaCopied {
+        path: std::path::PathBuf,
+    },
     SoundSaved {
         saved: SavedSoundEntry,
     },
@@ -151,6 +155,7 @@ pub enum ResultKind {
     Fonts,
     Font,
     BrandKit,
+    BrandMediaCopied,
     SoundSearch,
     SoundSaved,
     SoundUnsaved,
@@ -182,6 +187,7 @@ impl ResultKind {
             Self::Fonts => "fonts",
             Self::Font => "font",
             Self::BrandKit => "brand_kit",
+            Self::BrandMediaCopied => "brand_media_copied",
             Self::SoundSearch => "sound_search",
             Self::SoundSaved => "sound_saved",
             Self::SoundUnsaved => "sound_unsaved",
@@ -214,6 +220,7 @@ impl ControlResult {
             Self::Fonts { .. } => ResultKind::Fonts,
             Self::Font { .. } => ResultKind::Font,
             Self::BrandKit { .. } => ResultKind::BrandKit,
+            Self::BrandMediaCopied { .. } => ResultKind::BrandMediaCopied,
             Self::SoundSearch { .. } => ResultKind::SoundSearch,
             Self::SoundSaved { .. } => ResultKind::SoundSaved,
             Self::SoundUnsaved { .. } => ResultKind::SoundUnsaved,

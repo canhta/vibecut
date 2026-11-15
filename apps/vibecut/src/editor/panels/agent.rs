@@ -25,6 +25,7 @@ pub(in crate::editor) fn apply(state: &mut State, port: &mut Port<'_>, action: A
             state.accept();
         }
         Action::Send { display, sent } => {
+            lend_media_dir(port);
             state.begin(&*port.session, port.read.budget, Some(display), sent);
         }
         Action::Stop => state.stop(),
@@ -41,6 +42,7 @@ pub(in crate::editor) fn apply(state: &mut State, port: &mut Port<'_>, action: A
         }
         Action::Retry => {
             let was = state.previewing;
+            lend_media_dir(port);
             state.retry(&*port.session, port.read.budget);
             if was {
                 port.sync();
@@ -52,4 +54,12 @@ pub(in crate::editor) fn apply(state: &mut State, port: &mut Port<'_>, action: A
         }
         Action::Clear => state.clear(),
     }
+}
+
+/// The fork a turn takes inherits the live session's media folder, the one place the agent's
+/// `brand.copy_media` writes: this project's own `.media` folder.
+fn lend_media_dir(port: &mut Port<'_>) {
+    let dir = project::media_dir(port.session.saved_path());
+    // A folder past the path limit leaves none set, so the copy refuses `unavailable`.
+    let _ = port.session.set_media_dir(dir);
 }

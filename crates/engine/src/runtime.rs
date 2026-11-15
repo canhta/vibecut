@@ -158,5 +158,6 @@ pub use rendering::{
     submit_sequence_publication, subtitle_file,
 };
 
+pub use cache_location::user_config_dir;
 pub(crate) use staged_publication::snapshot_project_name;
 pub use staged_publication::{default_file_name, sanitize_file_name};

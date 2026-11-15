@@ -3,6 +3,7 @@ use super::Result;
 use super::files::{self, FileState};
 use super::record::{self, BrandColor, Content, Index, Kit, MAX_KITS, Media};
 use engine::BrandKitError;
+use engine::control::BrandMediaSection;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
@@ -42,6 +43,14 @@ impl BrandKit {
             _lease: lease,
             state: Mutex::new(index),
         })
+    }
+
+    /// Opens the user's store in the user config folder (`engine::user_config_dir`), beside the
+    /// desktop's preferences: `<config>/brand_kits`. A host without that folder is
+    /// `Unavailable`.
+    pub fn native() -> Result<Self> {
+        let config = engine::user_config_dir().map_err(|_| BrandKitError::Unavailable)?;
+        Self::open(&config.join("brand_kits"))
     }
 
     pub fn kits(&self) -> Result<Vec<KitSummary>> {
@@ -143,9 +152,15 @@ impl BrandKit {
         })
     }
 
-    /// Copies a media file into the store, verifies it by hash and records it under `name`.
-    /// Returns the entry's identity within the kit.
-    pub fn add_media(&self, id: u64, source: &Path, name: &str) -> Result<u64> {
+    /// Copies a media file into the store, verifies it by hash and records it under `name` in
+    /// `section`. Returns the entry's identity within the kit.
+    pub fn add_media(
+        &self,
+        id: u64,
+        section: BrandMediaSection,
+        source: &Path,
+        name: &str,
+    ) -> Result<u64> {
         record::check_name(name)?;
         let mut state = self.lock()?;
         state.kit(id)?;
@@ -162,11 +177,44 @@ impl BrandKit {
             kit.content.media.push(Media {
                 id: media_id,
                 name: name.to_owned(),
+                section,
                 sha256,
                 size,
             });
             Ok(media_id)
         })
+    }
+
+    /// Renames one media entry; the stored file and its section are unchanged.
+    pub fn rename_media(&self, id: u64, media_id: u64, name: &str) -> Result<()> {
+        record::check_name(name)?;
+        self.mutate(|index| {
+            let media = index
+                .kit_mut(id)?
+                .content
+                .media
+                .iter_mut()
+                .find(|entry| entry.id == media_id)
+                .ok_or(BrandKitError::NotFound)?;
+            media.name = name.to_owned();
+            Ok(())
+        })
+    }
+
+    /// Copies one media entry's stored file to `dest`, a path that must not exist yet, and
+    /// verifies the copy against the recorded hash and size. A missing or corrupt stored file
+    /// is `Integrity` and leaves nothing at `dest`. This is how a project gets its own copy.
+    pub fn copy_media(&self, id: u64, media_id: u64, dest: &Path) -> Result<()> {
+        let media = self
+            .lock()?
+            .kit(id)?
+            .content
+            .media
+            .iter()
+            .find(|entry| entry.id == media_id)
+            .cloned()
+            .ok_or(BrandKitError::NotFound)?;
+        files::export_media(&self.root, &media, dest)
     }
 
     pub fn remove_media(&self, id: u64, media_id: u64) -> Result<()> {

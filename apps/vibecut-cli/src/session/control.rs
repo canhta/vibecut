@@ -10,6 +10,7 @@ use engine::control::{
 use engine::control::{FontAccess, StickerAccess};
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
 use engine::{Command, Session, control, control::Error as EngineError};
+use libraries::brand_kit::NativeBrandKit;
 use project::{Project, WriterLease};
 use serde_json::{Value, json};
 use std::io;
@@ -84,6 +85,8 @@ fn control_with(
         project_path.clone(),
         project::metadata_path(&project_path)?,
     ])?;
+    // `brand.copy_media` writes only into the project's own media folder.
+    session.set_media_dir(project::media_dir(Some(project_path.as_path())))?;
     let mut runner = JobRunner::new(
         RunnerConfig {
             concurrency: [1, 1, 2],
@@ -171,7 +174,8 @@ fn control_with(
             sounds: None,
             music: None,
             stickers: Some(stickers),
-            brand: None,
+            // Opened for each `brand.*` request only, so the desktop app can hold it between.
+            brand: Some(&NativeBrandKit),
             media: media.as_ref(),
             chapters: None,
             captions: Some(&captions),
@@ -179,39 +183,39 @@ fn control_with(
         };
         // The engine owns save admission and its receipt; the closure only
         // publishes the bytes through the project owner.
-        let response =
-            match session.control_routed(request, caller, &mut runner, |project, metadata| {
-                let _receipt = lease.save(project)?;
-                lease.save_metadata(metadata)?;
-                Ok(())
-            }) {
-                Ok(response) => {
-                    if matches!(
-                        &response.value,
-                        ResponseValue::Result(ControlResult::Edit { outcome }) if outcome.changed
-                    ) {
-                        metadata_dirty = true;
-                        if command_id != "project.set_view_state" {
-                            project_dirty = true;
-                        }
-                    }
-                    if before != *session.project() {
+        let routed = session.control_routed(request, caller, &mut runner, |project, metadata| {
+            let _receipt = lease.save(project)?;
+            lease.save_metadata(metadata)?;
+            Ok(())
+        });
+        let response = match routed {
+            Ok(response) => {
+                if matches!(
+                    &response.value,
+                    ResponseValue::Result(ControlResult::Edit { outcome }) if outcome.changed
+                ) {
+                    metadata_dirty = true;
+                    if command_id != "project.set_view_state" {
                         project_dirty = true;
                     }
-                    response
                 }
-                Err(error) => {
-                    let code = error.code();
-                    write_control_error(
-                        &mut out,
-                        Some(&request_id),
-                        code,
-                        "control request refused before admission",
-                    )?;
-                    last_exit = control_exit(code);
-                    continue;
+                if before != *session.project() {
+                    project_dirty = true;
                 }
-            };
+                response
+            }
+            Err(error) => {
+                let code = error.code();
+                write_control_error(
+                    &mut out,
+                    Some(&request_id),
+                    code,
+                    "control request refused before admission",
+                )?;
+                last_exit = control_exit(code);
+                continue;
+            }
+        };
         // A save clears dirty state only when it published the current revision.
         // Replay of an older receipt after later edits must leave the session dirty.
         if engine::lifecycle(&command_id) == Some(engine::Lifecycle::Save)

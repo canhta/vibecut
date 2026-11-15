@@ -7,7 +7,8 @@ use std::{collections::VecDeque, sync::Arc};
 ///
 /// Every `Session` field is classified here by exhaustive destructuring, so a
 /// new field does not compile until it is restored or excluded. Excluded:
-/// `protected` (set only by `protect_paths`, never by a command), `identity`
+/// `protected` and `media_dir` (set only by `protect_paths` and `set_media_dir`, never by a
+/// command), `identity`
 /// and `limit` (fixed at construction), `generation` (monotonic: lifetimes a
 /// refused command opened stay retired) and `grouping` (`transaction` sets and
 /// clears it around its own closure), `recorded` (a fork's command log, appended only after
@@ -39,6 +40,7 @@ impl Checkpoint {
             item_clipboard,
             metadata,
             protected: _,
+            media_dir: _,
             identity: _,
             revision,
             generation: _,
@@ -86,6 +88,7 @@ impl Checkpoint {
             item_clipboard,
             metadata,
             protected: _,
+            media_dir: _,
             identity: _,
             revision,
             generation: _,

@@ -1166,3 +1166,95 @@ fn ephemeral_assets_are_hidden_and_cannot_enter_library_selection() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].source_asset, Some(AssetId(1)));
 }
+
+/// Fails if a Brand assets row, clicked or dragged onto the main track, imports the kit's own
+/// stored file instead of a project copy, or if the copy is not inserted on the timeline.
+#[test]
+fn brand_asset_click_and_drag_insert_a_project_copy_of_the_kit_file() {
+    let woken = crate::woken::Woken::bind();
+    let kits = tempfile::tempdir().unwrap();
+    let sources = tempfile::tempdir().unwrap();
+    let source = sources.path().join("brand-intro.mp4");
+    std::fs::write(&source, b"brand intro").unwrap();
+    let store = Arc::new(libraries::brand_kit::BrandKit::open(kits.path()).unwrap());
+    let kit = store.create("Brand").unwrap();
+    store.set_active(Some(kit)).unwrap();
+    let media = store
+        .add_media(
+            kit,
+            engine::control::BrandMediaSection::Video,
+            &source,
+            "brand-intro.mp4",
+        )
+        .unwrap();
+    for drag in [false, true] {
+        let mut editor = editor();
+        editor.set_import_probe(Arc::new(Probe::default())).unwrap();
+        editor.set_brand_kit(store.clone());
+        let mut harness = crate::gpu::builder()
+            .with_size(egui::vec2(1440.0, 900.0))
+            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+        woken.attach(&harness.ctx);
+        harness.run_steps(2);
+        widget(&harness, "assets.subnav.brand_assets").click();
+        harness.run_steps(1);
+        let row = format!("media.brand.{media}");
+        woken.step_until(&mut harness, "the brand kit listing", |editor| {
+            crate::woken::shows(editor, &row)
+        });
+        if drag {
+            let from = widget_rect(&harness, &row).center();
+            let data = harness.state().session.project().data().clone();
+            let main = data.scene().timeline.main.id.0;
+            let header = widget_rect(&harness, &format!("track.{main}.header"));
+            let target = egui::pos2(header.right() + 80.0, header.center().y);
+            harness.hover_at(from);
+            harness.drag_at(from);
+            harness.run_steps(1);
+            harness.hover_at(target);
+            harness.run_steps(1);
+            harness.drop_at(target);
+            harness.run_steps(1);
+        } else {
+            widget(&harness, &row).click();
+        }
+        woken.step_until(&mut harness, "the copied file's insert", |editor| {
+            !editor.importing()
+                && !editor
+                    .session
+                    .project()
+                    .data()
+                    .scene()
+                    .timeline
+                    .main
+                    .items
+                    .is_empty()
+        });
+        let data = harness.state().session.project().data().clone();
+        let asset = data.scene().timeline.main.items[0]
+            .source_asset
+            .and_then(|id| data.assets.iter().find(|asset| asset.id() == id))
+            .unwrap()
+            .clone();
+        assert!(
+            !asset.path().starts_with(kits.path()),
+            "the project names its own copy, never the kit's file (drag: {drag}): {:?}",
+            asset.path()
+        );
+        assert_eq!(std::fs::read(asset.path()).unwrap(), b"brand intro");
+        std::fs::remove_file(asset.path()).unwrap();
+    }
+}
+
+/// The last frame's rect of the widget `id`.
+fn widget_rect(harness: &Harness<'_, Editor>, id: &str) -> egui::Rect {
+    harness
+        .state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .into_iter()
+        .find(|widget| widget.id == id)
+        .unwrap_or_else(|| panic!("missing widget {id}"))
+        .rect
+}

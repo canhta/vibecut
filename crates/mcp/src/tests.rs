@@ -206,6 +206,73 @@ fn stickers_search_is_refused_until_the_catalog_is_lent() {
     assert_eq!(session.revision(), revision);
 }
 
+fn lent_brand_list() -> control::Result<Option<control::BrandKitView>> {
+    Ok(None)
+}
+
+fn lent_brand_edit(_: control::BrandEdit) -> control::Result<Option<control::BrandKitView>> {
+    Ok(None)
+}
+
+fn lent_brand_copy(_: u64, dir: &std::path::Path) -> control::Result<std::path::PathBuf> {
+    Ok(dir.join("logo.png"))
+}
+
+/// A brand kit store whose copy names its destination without writing it.
+struct LentBrand;
+impl control::BrandStore for LentBrand {
+    fn lend(&self, serve: &mut dyn FnMut(&control::BrandAccess<'_>)) {
+        serve(&control::BrandAccess::new(
+            &lent_brand_list,
+            &lent_brand_edit,
+            &lent_brand_copy,
+        ));
+    }
+}
+
+/// Fails if the inbox lends no brand kit store to `brand.*`, or if an agent's
+/// `brand.copy_media` lands anywhere but the session's media folder.
+#[test]
+fn brand_copy_media_reaches_the_lent_store_and_lands_in_the_session_media_folder() {
+    let (_handler, mut inbox) =
+        Inbox::new(Grants::default(), ByteBudget::new(64 << 20).unwrap()).unwrap();
+    let mut session = Session::new(
+        project::Project::empty(project::ProjectId(1), "brand".into()).unwrap(),
+        10,
+    )
+    .unwrap();
+    let media = std::env::temp_dir().join("brand.vibecut.media");
+    session.set_media_dir(media.clone()).unwrap();
+    let revision = session.revision();
+    let request = |key: &str| {
+        json!({
+            "command": "brand.copy_media",
+            "params": {"media": 1},
+            "base_rev": revision,
+            "idempotency_key": key,
+            "request_id": key,
+        })
+    };
+    let refused = inbox
+        .execute_project(&mut session, request("brand-unlent"), |_, _| Ok(()))
+        .unwrap();
+    assert_eq!(refused.pointer("/value/status"), Some(&json!("error")));
+
+    inbox.attach_brand(Arc::new(LentBrand));
+    let copied = inbox
+        .execute_project(&mut session, request("brand-lent"), |_, _| Ok(()))
+        .unwrap();
+    assert_eq!(
+        copied.pointer("/value/value/kind"),
+        Some(&json!("brand_media_copied")),
+        "{copied}"
+    );
+    assert_eq!(
+        copied.pointer("/value/value/path"),
+        Some(&json!(media.join("logo.png")))
+    );
+}
+
 #[tokio::test]
 async fn lut_source_import_is_denied_on_real_mcp_wire_before_job_or_io() {
     let root = tempfile::tempdir().unwrap();
@@ -783,6 +850,12 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("fonts.import", Effect::JobControl, false, false),
         ("footage.analyze", Effect::JobControl, true, true),
         ("brand.list", Effect::Read, true, true),
+        ("brand.add_font", Effect::Read, true, true),
+        ("brand.add_media", Effect::Read, false, false),
+        ("brand.copy_media", Effect::Read, true, true),
+        ("brand.remove_font", Effect::Read, true, true),
+        ("brand.remove_media", Effect::Read, true, true),
+        ("brand.rename_media", Effect::Read, true, true),
     ];
     let root = tempfile::tempdir().unwrap();
     let grant = Grants::output(root.path()).unwrap();

@@ -281,8 +281,8 @@ impl State {
                 *state = AssetState::Ready;
             }
         }
-        if let Some(at) = self.paste_at.take() {
-            self.insert_pasted(port, at);
+        if let Some((at, placement)) = self.paste_at.take() {
+            self.insert_pasted(port, at, placement);
         }
         let failed_count = self.import_failures.len();
         let unfinished_count = self.import_total.saturating_sub(self.import_completed);

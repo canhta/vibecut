@@ -40,7 +40,10 @@ pub(in crate::editor) enum MediaSection {
     #[default]
     Media,
     Timeline,
+    /// The Yours group's pages, in the reference's order.
     Favorites,
+    MyPresets,
+    BrandAssets,
 }
 
 /// One folder tile of the Media page.
@@ -247,4 +250,10 @@ pub(in crate::editor) enum Action {
     /// licence credit before the button.
     DownloadSticker(String),
     CancelStickerDownload,
+    /// Read the active brand kit again (the Brand assets page's refresh icon).
+    RefreshBrand,
+    /// Copy one brand kit file into the project and insert it at the playhead.
+    InsertBrandMedia(u64),
+    /// A press on a brand kit row started a drag; the timeline resolves where it lands.
+    BrandDrag(u64),
 }

@@ -1,5 +1,5 @@
 //! Renders the Media tab's Favorites page: the starred catalogue items and their empty state.
-use super::{Action, AssetsTab, FontId, Icon, Id, Rect, Text, Vec2, View, egui, icons, theme};
+use super::{Action, AssetsTab, Icon, Id, Rect, Text, Vec2, View, egui, icons, theme};
 use crate::i18n;
 
 /// The catalogue families a star can sit in: the stored id and the label.
@@ -91,7 +91,7 @@ impl View<'_> {
         out
     }
 
-    pub(super) fn favorites(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::editor::panels::assets::view) fn favorites(&mut self, ui: &mut egui::Ui) {
         let area = ui.available_rect_before_wrap();
         let tool = Rect::from_min_size(
             egui::pos2(area.right() - 36.0, area.top()),
@@ -233,51 +233,8 @@ impl View<'_> {
     /// The empty state: the star, one line, and the link to where stars are made. The link
     /// goes to the Effects tab, the nearest catalogue (the reference's Library is online).
     fn favorites_empty(&mut self, ui: &mut egui::Ui, body: Rect) {
-        let dark = self.cx.preferences.dark;
-        let font = FontId::proportional(theme::type_size::BODY);
-        let text = ui.painter().layout_no_wrap(
-            self.tr(Text::MediaFavoritesEmpty).to_owned(),
-            font.clone(),
-            theme::secondary(dark),
-        );
-        let link = ui.painter().layout_no_wrap(
-            self.tr(Text::MediaFavoritesLink).to_owned(),
-            font,
-            theme::accent(dark),
-        );
-        let width = text.size().x + theme::space::XS + link.size().x;
-        let height = theme::icon::STATE + theme::space::MD + text.size().y;
-        let top = body.center().y - height / 2.0;
-        icons::tinted(Icon::Star, theme::icon::STATE, theme::secondary(dark)).paint_at(
-            ui,
-            Rect::from_center_size(
-                egui::pos2(body.center().x, top + theme::icon::STATE / 2.0),
-                Vec2::splat(theme::icon::STATE),
-            ),
-        );
-        let line = egui::pos2(
-            body.center().x - width / 2.0,
-            top + theme::icon::STATE + theme::space::MD,
-        );
-        let link_rect = Rect::from_min_size(
-            line + Vec2::new(text.size().x + theme::space::XS, 0.0),
-            link.size(),
-        );
-        ui.painter().galley(line, text, theme::secondary(dark));
-        ui.painter()
-            .galley(link_rect.min, link, theme::accent(dark));
-        let response = ui
-            .interact(
-                link_rect,
-                Id::unique("media.favorites.link"),
-                egui::Sense::click(),
-            )
-            .on_hover_cursor(egui::CursorIcon::PointingHand);
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::Role::Button, true, self.tr(Text::MediaFavoritesLink))
-        });
-        self.remember("media.favorites.link", &response, None);
-        if response.clicked() {
+        let link = Some((Text::MediaFavoritesLink, "media.favorites.link"));
+        if self.empty_page(ui, body, Icon::Star, Text::MediaFavoritesEmpty, link) {
             self.actions.push(Action::SelectTab(AssetsTab::Effects));
         }
     }

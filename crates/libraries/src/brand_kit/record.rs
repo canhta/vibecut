@@ -13,7 +13,7 @@ pub const MAX_FILE_BYTES: u64 = 256 << 20;
 /// Longest kit, colour, font, media or preset name, in UTF-8 bytes.
 pub const MAX_NAME_BYTES: usize = 128;
 /// Schema of the store index and of archive records.
-pub(super) const SCHEMA: u32 = 1;
+pub(super) const SCHEMA: u32 = 2;
 /// Largest index or archive record read from disk.
 pub(super) const MAX_RECORD_BYTES: u64 = 4 << 20;
 
@@ -55,12 +55,14 @@ pub(super) struct BrandColor {
     pub rgba: [u8; 4],
 }
 
-/// One media file. The stored file is named by its SHA-256, so names never reach the filesystem.
+/// One media file, filed under one page section. The stored file is named by its SHA-256, so
+/// names never reach the filesystem.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Media {
     pub id: u64,
     pub name: String,
+    pub section: engine::control::BrandMediaSection,
     pub sha256: String,
     pub size: u64,
 }
