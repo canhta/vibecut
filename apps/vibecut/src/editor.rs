@@ -161,15 +161,16 @@ impl Editor {
         self.timeline.set_proxies(self.playback.proxies().cloned());
     }
 
-    /// Attach the native effect adapter to playback and thumbnail jobs, sharing
+    /// Attach the native effect adapter to playback, thumbnail and export jobs, sharing
     /// playback's byte budget. Failure leaves the thumbnail composition unchanged.
     pub fn set_effects(
         &mut self,
         effects: Arc<dyn render::effects::EffectCompositor>,
     ) -> Result<()> {
         let previews = assets::State::effect_previews_for(self.playback.budget(), effects.clone())?;
-        self.playback.set_effects(effects)?;
+        self.playback.set_effects(effects.clone())?;
         self.assets.effect_previews = Some(previews);
+        self.dialogs.export.set_effects(effects);
         Ok(())
     }
 

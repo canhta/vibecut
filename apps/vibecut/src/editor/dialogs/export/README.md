@@ -52,11 +52,34 @@ files; closing the dialog discards them.
 `export.run` and `export.retry` submit through engine's one export job path and share
 playback's byte budget.
 
-Desktop export keeps the CPU effect reference in its render settings. Native preview
-attachment is separate from the shared render state, so a successful GPU preview
-does not attach an adapter to export. The [render effect interface](../../../../../../crates/render/src/scene/README.md#effects-and-desktop-adapter)
-accepts an optional device-free adapter; its native resource contract lives with
-[GPU effects](../../../services/gpu/effects/README.md).
+**Effect adapter.** `Editor::set_effects` lends the app's desktop effect adapter to
+export as it does to preview and thumbnails; without a GPU nothing is lent and export
+runs the exact CPU path. `State::set_effects` keeps it and hands it to the dialog in
+place, now or when the dialog is created. `prepare` copies it into the job's
+`settings.render.effects` right after `render_state.settings(project)`, so engine
+admission, the one byte budget shared with playback, the encoder choice, staged
+publication and the cancellation fence are unchanged. The
+[render effect interface](../../../../../../crates/render/src/scene/README.md#effects-and-desktop-adapter)
+takes the adapter device-free; its native resource contract lives with
+[GPU effects](../../../services/gpu/effects/README.md). Start freezes the adapter with
+the attempt's project and encoder, and Retry reruns that snapshot: an adapter attached
+after a failure applies to the next Start only. A pass without an entry, or a run or
+frame the adapter answers `Unsupported` (a contended device permit, a device loss
+before the frame is committed), renders on the CPU reference inside the same job;
+`Budget`, `Cancelled` and `Invalid` fail the attempt with nothing published and no
+retry. Closing the dialog cancels and joins its runner before the adapter is released,
+and the app drops its project windows before the adapter.
+
+**Enabling gate.** The lending stays only on a measured result. `cargo xtask build --
+cargo run --release -p vibecut --example gpu_path_probe -- export` exports the 60 s
+1080p30 three-effect timeline on the CPU and through the adapter under the same
+768 MiB budget and encoder, checks 1800 decoded frames and 60 s within one frame with
+ffprobe, prints the adapter's `GPU_SCOPES` and `GPU_COUNTS` (device and fallback
+counts), fails on any working-frame channel over 2e-5, and ends with
+`EXPORT_GATE ... passed=`. `passed=true` means the adapter export completed faster
+than the CPU one. A `passed=false` run on a native host (Vulkan or Metal) means the
+lander removes the export line from `Editor::set_effects` and export stays on the CPU;
+the decision is that measurement, never an adapter or hardware name.
 
 On completion the app opens the asynchronous native save dialog with the sanitized
 `<ProjectName>.<ext>` and last save directory. Filenames keep Unicode and spaces,

@@ -1798,3 +1798,215 @@ fn the_color_space_row_names_the_only_space_the_encoder_writes() {
     // The row has no control: it is read-only text that carries the reason on hover.
     assert!(enabled(&bench, "export.color_space"));
 }
+
+/// A lent effect adapter that keeps every run on the CPU reference and counts its
+/// frames. One frame acquisition at a time, like the device permit: a contended one is
+/// refused (`Unsupported`), so render takes the CPU for it. A `held` adapter signals
+/// its first acquisition on `entered` and parks it on a closed gate until `open`.
+#[derive(Default)]
+struct Lent {
+    frames: AtomicUsize,
+    refused: AtomicUsize,
+    busy: AtomicBool,
+    entered: Mutex<Option<mpsc::Sender<()>>>,
+    closed: Mutex<bool>,
+    gate: Condvar,
+}
+impl Lent {
+    fn open(&self) {
+        *self.closed.lock().unwrap() = false;
+        self.gate.notify_all();
+    }
+}
+impl render::effects::EffectCompositor for Lent {
+    fn frame<'a>(
+        &'a self,
+        hooks: &'a dyn render::ExecutionHooks,
+    ) -> render::Result<Option<Box<dyn render::effects::EffectCompositor + 'a>>> {
+        if self.busy.swap(true, Ordering::SeqCst) {
+            self.refused.fetch_add(1, Ordering::SeqCst);
+            return Err(render::Error::Unsupported("lent adapter busy"));
+        }
+        self.frames.fetch_add(1, Ordering::SeqCst);
+        if let Some(entered) = self.entered.lock().unwrap().take() {
+            entered.send(()).unwrap();
+        }
+        drop(
+            self.gate
+                .wait_while(self.closed.lock().unwrap(), |closed| *closed)
+                .unwrap(),
+        );
+        self.busy.store(false, Ordering::SeqCst);
+        if hooks.cancelled() {
+            return Err(render::Error::Cancelled);
+        }
+        Ok(None)
+    }
+    fn release_idle(&self) -> render::Result<()> {
+        Ok(())
+    }
+    fn supports(&self, _: &str) -> bool {
+        false
+    }
+    fn apply(
+        &self,
+        _: &render::Image,
+        _: &[render::effects::EffectPass],
+        _: render::effects::EffectInputs<'_>,
+        _: &dyn render::ExecutionHooks,
+    ) -> render::Result<render::Image> {
+        Err(render::Error::Unsupported("lent adapter declines"))
+    }
+}
+fn held() -> (Arc<Lent>, mpsc::Receiver<()>) {
+    let (send, entered) = mpsc::channel();
+    let lent = Lent {
+        entered: Mutex::new(Some(send)),
+        closed: Mutex::new(true),
+        ..Lent::default()
+    };
+    (Arc::new(lent), entered)
+}
+fn frames_options() -> ExportOptions {
+    ExportOptions {
+        format: ExportFormat::PngSequence,
+        include_audio: false,
+        ..ExportOptions::default()
+    }
+}
+fn lent_dialog(lent: Option<&Arc<Lent>>, budget: &ByteBudget) -> super::ExportDialog {
+    let mut dialog = super::ExportDialog::new(budget.clone(), Arc::default()).unwrap();
+    if let Some(lent) = lent {
+        dialog.set_effects(lent.clone());
+    }
+    dialog
+}
+fn start(dialog: &mut super::ExportDialog, project: &Arc<Project>) {
+    dialog
+        .start(project.clone(), frames_options(), Default::default())
+        .unwrap();
+}
+/// Start `dialog`'s attempt and return once its first frame waits on the adapter's gate.
+fn start_held(
+    dialog: &mut super::ExportDialog,
+    project: &Arc<Project>,
+    entered: &mpsc::Receiver<()>,
+) {
+    start(dialog, project);
+    // The runner starts a queued job on its next pump.
+    dialog.tick(project, frames_options()).unwrap();
+    entered.recv_timeout(Duration::from_secs(10)).unwrap();
+}
+/// Tick every dialog until none runs.
+fn tick_all(dialogs: &mut [&mut super::ExportDialog], project: &Arc<Project>) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while dialogs.iter().any(|dialog| dialog.active()) {
+        for dialog in dialogs.iter_mut() {
+            dialog.tick(project, frames_options()).unwrap();
+        }
+        assert!(Instant::now() < deadline, "export stalled");
+        std::thread::yield_now();
+    }
+}
+/// The rendered PNG frames in frame order, without the staged directory's name.
+fn frames_of(dialog: &super::ExportDialog) -> Vec<Vec<u8>> {
+    let dir = dialog.inspect().finished.unwrap();
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    files.sort();
+    files.iter().map(|path| std::fs::read(path).unwrap()).collect()
+}
+
+/// Fails if export keeps `effects=None` after the adapter is lent, or if lending an
+/// adapter that declines every run changes the frames the CPU-only export writes.
+#[test]
+fn lent_adapter_renders_every_export_frame_and_matches_the_cpu_reference() {
+    let project = Arc::new(project(false, false));
+    let budget = ByteBudget::new(768 << 20).unwrap();
+    let lent = Arc::new(Lent::default());
+    let mut cpu = lent_dialog(None, &budget);
+    let mut gpu = lent_dialog(Some(&lent), &budget);
+    start(&mut cpu, &project);
+    tick_all(&mut [&mut cpu], &project);
+    start(&mut gpu, &project);
+    tick_all(&mut [&mut gpu], &project);
+    assert_eq!(cpu.phase(), super::ExportPhase::Ready);
+    assert_eq!(gpu.phase(), super::ExportPhase::Ready);
+    let reference = frames_of(&cpu);
+    assert!(!reference.is_empty());
+    assert!(lent.frames.load(Ordering::SeqCst) >= reference.len());
+    assert_eq!(frames_of(&gpu), reference);
+}
+
+/// Fails if a second export owner contending for the one shared adapter fails, or
+/// writes other frames, instead of rendering the refused frame on the CPU.
+#[test]
+fn two_export_owners_share_one_adapter_and_a_refused_frame_renders_on_the_cpu() {
+    let project = Arc::new(project(false, false));
+    let budget = ByteBudget::new(768 << 20).unwrap();
+    let (lent, entered) = held();
+    let mut first = lent_dialog(Some(&lent), &budget);
+    let mut second = lent_dialog(Some(&lent), &budget);
+    start_held(&mut first, &project, &entered);
+    // The first owner holds the adapter's only permit for the whole second export.
+    start(&mut second, &project);
+    tick_all(&mut [&mut second], &project);
+    lent.open();
+    tick_all(&mut [&mut first], &project);
+    assert_eq!(first.phase(), super::ExportPhase::Ready);
+    assert_eq!(second.phase(), super::ExportPhase::Ready);
+    assert!(lent.refused.load(Ordering::SeqCst) >= 1);
+    assert_eq!(frames_of(&first), frames_of(&second));
+}
+
+/// Fails if Retry lends the adapter attached after the failed attempt rather than
+/// the attempt's own, or cannot publish its new render to a fresh destination.
+#[test]
+fn retry_renders_with_the_attempt_adapter_into_a_fresh_destination() {
+    let project = Arc::new(project(false, true));
+    let budget = ByteBudget::new(768 << 20).unwrap();
+    let (attempt, later) = (Arc::new(Lent::default()), Arc::new(Lent::default()));
+    let restored = Arc::new(AtomicBool::new(false));
+    let mut dialog = lent_dialog(Some(&attempt), &budget);
+    dialog
+        .set_sources(Arc::new(Restorable {
+            restored: restored.clone(),
+            decoded: Arc::default(),
+        }))
+        .unwrap();
+    start(&mut dialog, &project);
+    tick_all(&mut [&mut dialog], &project);
+    assert_eq!(dialog.phase(), super::ExportPhase::Failed);
+    dialog.set_effects(later.clone());
+    restored.store(true, Ordering::SeqCst);
+    dialog.retry(project.clone()).unwrap();
+    tick_all(&mut [&mut dialog], &project);
+    assert_eq!(dialog.phase(), super::ExportPhase::Ready);
+    assert!(attempt.frames.load(Ordering::SeqCst) > 0);
+    assert_eq!(later.frames.load(Ordering::SeqCst), 0);
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join("fresh");
+    dialog.save_to(destination.clone(), Vec::new()).unwrap();
+    tick_all(&mut [&mut dialog], &project);
+    assert!(std::fs::read_dir(&destination).unwrap().count() > 0);
+}
+
+/// Fails if closing the dialog leaves the running export worker holding the lent
+/// adapter, or its bytes, after the app may drop the device.
+#[test]
+fn closing_a_lent_export_cancels_and_joins_before_releasing_the_adapter() {
+    let project = Arc::new(project(false, false));
+    let budget = ByteBudget::new(768 << 20).unwrap();
+    let (lent, entered) = held();
+    let mut dialog = lent_dialog(Some(&lent), &budget);
+    start_held(&mut dialog, &project, &entered);
+    // The close runs while the worker waits on the gate; the gate opens beside it.
+    std::thread::scope(|scope| {
+        scope.spawn(|| lent.open());
+        drop(dialog);
+    });
+    assert_eq!(Arc::strong_count(&lent), 1);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+}
