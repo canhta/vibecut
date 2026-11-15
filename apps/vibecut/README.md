@@ -15,6 +15,7 @@ Each module's contract is its README.
 |---|---|
 | `actions.rs` / `actions/` | [Action registry](src/actions/README.md) |
 | `app.rs` / `app/` | [Composition root](src/app/README.md) |
+| `app/startup.rs` / `app/startup/` | [Startup notices](src/app/startup/README.md) |
 | `editor.rs` / `editor/` | [Editor presentation](src/editor/README.md) |
 | `editor/panels/agent/` | [Agent chat](src/editor/panels/agent/README.md) |
 | `editor/panels/assets/` | [Assets](src/editor/panels/assets/README.md) |

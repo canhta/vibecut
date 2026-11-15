@@ -2482,7 +2482,9 @@ fn resident_frame_takes_admitted_items_and_other_plans_keep_the_run_path() {
         mask.stroke.width = stroke;
         mask
     }
-    let rows: [(&str, fn(&mut project::Item), bool); 6] = [
+    /// A row name, the item edit it applies and whether the resident frame admits it.
+    type Row = (&'static str, fn(&mut project::Item), bool);
+    let rows: [Row; 6] = [
         ("plain", |_| {}, true),
         ("masked", |item| item.masks.push(ellipse(0.0)), true),
         ("stroke", |item| item.masks.push(ellipse(3.0)), false),
