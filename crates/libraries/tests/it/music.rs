@@ -1213,7 +1213,11 @@ fn owned_root_alias_is_chosen_once_and_held_directories_bind_local_operations() 
         let path = root.path().join("library");
         let library = MusicLibrary::open(&path).unwrap();
         library.save(&music).unwrap();
+        // Only the Windows branch reads the cached record back.
+        #[cfg(windows)]
         let cached = library.store_cached(&music.audio_url, &wav()).unwrap();
+        #[cfg(unix)]
+        library.store_cached(&music.audio_url, &wav()).unwrap();
         let saved = library.saved().unwrap();
         let before = std::fs::read(path.join("library.json")).unwrap();
         let named = if parent {
