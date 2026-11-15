@@ -182,12 +182,16 @@ fn windows_static_threads(prefix: &Path) -> Result<PathBuf, String> {
 /// Opus 1.6.1's CMake claims ARM runtime CPU detection on every Windows
 /// target, but `celt/arm/armcpu.c` implements the Windows probe for MSVC only,
 /// so MinGW Clang cannot compile it. AArch64 mandates Advanced SIMD, so
-/// presuming NEON calls the same NEON kernels detection would select.
+/// presuming NEON calls the same NEON kernels detection would select. Turning
+/// the CMake runtime check off also drops the intrinsics-support define the
+/// NEON declarations need; it is restored as Opus's autotools
+/// `--disable-rtcd` build defines it.
 fn opus_windows_arm64_flags(target: &str) -> Vec<String> {
     if target == "windows-aarch64" {
         vec![
             "-DOPUS_MAY_HAVE_NEON=OFF".into(),
             "-DOPUS_PRESUME_NEON=ON".into(),
+            "-DCMAKE_C_FLAGS=-DOPUS_ARM_MAY_HAVE_NEON_INTR=1".into(),
         ]
     } else {
         Vec::new()
