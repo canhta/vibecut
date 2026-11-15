@@ -2,8 +2,9 @@
 //! Blur, Mirror and Wrap Shift.
 //!
 //! Detail Boost reuses the shared gaussian and `detail_boost` passes. Lens Blur,
-//! Mirror and Wrap Shift are one `Sample` pass each; none has a shader entry, so
-//! the run splitter keeps them on the CPU.
+//! Mirror and Wrap Shift are one `Sample` pass each with a shader entry; a Lens
+//! Blur disc wider than its direct reach is a whole-image reduction on the CPU
+//! ([`reduces`]), which no shader entry computes.
 use super::{
     EffectFrame, EffectGeometry, EffectPass, Error, ExecutionHooks, Image, Result, SampleInputs,
     Uniform, clamp_pixel, encoded_color, image_ops, luma, sigma_passes, straight, uniform,
@@ -239,6 +240,14 @@ fn plane_sample(plane: &Image, x: f32, y: f32) -> [f32; 4] {
     })
 }
 
+/// Whether the CPU runs this sample pass as the whole-image [`reduced_sample`]
+/// on a `width` x `height` picture: a Lens Blur disc wider than
+/// [`LENS_DIRECT_REACH`].
+pub(super) fn reduces(entry_point: &str, values: &[f32], width: u32, height: u32) -> bool {
+    entry_point == "lens_blur"
+        && lens_levels(uniform(values, 2), uniform(values, 3), width, height) > 0
+}
+
 /// The whole-picture form of Lens Blur for a disc wider than
 /// [`LENS_DIRECT_REACH`] (`None` for any other pass or a disc that fits): the
 /// highlight boost is applied to each texel, the boosted copy is halved by 2x2
@@ -252,16 +261,13 @@ pub(super) fn reduced_sample(
     values: &[f32],
     hooks: &dyn ExecutionHooks,
 ) -> Result<Option<Image>> {
-    if entry_point != "lens_blur" {
+    if !reduces(entry_point, values, current.width, current.height) {
         return Ok(None);
     }
     let sides = uniform(values, 0) as u32;
     let [rotation, rx, ry, rings, boost, threshold] =
         [1, 2, 3, 4, 5, 6].map(|i| uniform(values, i));
     let levels = lens_levels(rx, ry, current.width, current.height);
-    if levels == 0 {
-        return Ok(None);
-    }
     let scale = 2f32.powi(levels as i32);
     let width = current.width as usize;
     let mut low = if boost > 0.0 {
