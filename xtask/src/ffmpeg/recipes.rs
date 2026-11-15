@@ -209,8 +209,9 @@ pub(super) fn build_source(
     let patch_id = patch_id(&patches)?;
     // Windows prefixes link zlib and winpthreads statically; the suffix keeps
     // older prefixes that import zlib1.dll or libwinpthread-1.dll from reuse.
+    // The patch identity stays last: `prefix()` admits names ending in it.
     let prefix = base.join(format!(
-        "{version}-opus{opus}-vpx{vpx}-zlib{zlib}-lame{LAME_VERSION}-{patch_id}{}",
+        "{version}-opus{opus}-vpx{vpx}-zlib{zlib}-lame{LAME_VERSION}{}-{patch_id}",
         if cfg!(windows) { "-static-runtime" } else { "" }
     ));
     if prefix.join("BUILD.txt").exists() {

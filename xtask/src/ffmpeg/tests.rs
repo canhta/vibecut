@@ -434,9 +434,10 @@ fn zlib_checksum_mismatch_leaves_no_provisioned_prefix() {
     )
     .unwrap();
     let patch_id = patch_id(&patches().unwrap()).unwrap();
-    let prefix = base
-        .path()
-        .join(format!("1.4-opus1.0-vpx1.0-zlib1.4-lame3.100-{patch_id}"));
+    let prefix = base.path().join(format!(
+        "1.4-opus1.0-vpx1.0-zlib1.4-lame3.100{}-{patch_id}",
+        if cfg!(windows) { "-static-runtime" } else { "" }
+    ));
     let error = build_source(base.path(), "linux-aarch64", "1.4", "1.0", "1.0", "1.4").unwrap_err();
     assert!(
         error.contains("zlib 1.4 source checksum mismatch"),
