@@ -2396,6 +2396,175 @@ fn busy_frame_chooses_cpu_before_sources_and_output() {
     assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
 }
 
+/// A frame scope gets an admitted item as one two-layer frame (backdrop, then the item
+/// with its effect instances and prepared clip coverage) equal to the CPU render, with
+/// no per-run device call; a stroke, transform, non-Normal blend or non-resident
+/// entry keeps the run path and never asks for the frame.
+#[test]
+fn resident_frame_takes_admitted_items_and_other_plans_keep_the_run_path() {
+    use std::sync::Mutex;
+    #[derive(Default)]
+    struct Calls {
+        /// Layer count, non-empty instances, coverage present.
+        frames: Vec<(usize, usize, bool)>,
+        applies: usize,
+    }
+    struct Device(Mutex<Calls>);
+    struct Scope<'a>(&'a Mutex<Calls>);
+    impl EffectCompositor for Device {
+        fn frame<'a>(
+            &'a self,
+            _: &'a dyn ExecutionHooks,
+        ) -> Result<Option<Box<dyn EffectCompositor + 'a>>> {
+            Ok(Some(Box::new(Scope(&self.0))))
+        }
+        fn release_idle(&self) -> Result<()> {
+            Ok(())
+        }
+        fn supports(&self, _: &str) -> bool {
+            true
+        }
+        fn apply(
+            &self,
+            item: &Image,
+            passes: &[EffectPass],
+            inputs: EffectInputs<'_>,
+            hooks: &dyn ExecutionHooks,
+        ) -> Result<Image> {
+            CpuEffects.apply(item, passes, inputs, hooks)
+        }
+    }
+    impl EffectCompositor for Scope<'_> {
+        fn frame<'a>(
+            &'a self,
+            _: &'a dyn ExecutionHooks,
+        ) -> Result<Option<Box<dyn EffectCompositor + 'a>>> {
+            Err(Error::Invalid("nested frame"))
+        }
+        fn release_idle(&self) -> Result<()> {
+            Ok(())
+        }
+        fn supports(&self, _: &str) -> bool {
+            true
+        }
+        fn apply(
+            &self,
+            item: &Image,
+            passes: &[EffectPass],
+            inputs: EffectInputs<'_>,
+            hooks: &dyn ExecutionHooks,
+        ) -> Result<Image> {
+            self.0.lock().unwrap().applies += 1;
+            CpuEffects.apply(item, passes, inputs, hooks)
+        }
+        fn composite_layers(
+            &self,
+            width: u32,
+            height: u32,
+            layers: &[FrameLayer<'_>],
+            hooks: &dyn ExecutionHooks,
+        ) -> Result<Image> {
+            self.0.lock().unwrap().frames.push((
+                layers.len(),
+                layers
+                    .iter()
+                    .flat_map(|layer| layer.effects)
+                    .filter(|run| !run.is_empty())
+                    .count(),
+                layers.iter().any(|layer| layer.coverage.is_some()),
+            ));
+            reference_layers(width, height, layers, hooks)
+        }
+    }
+    fn ellipse(stroke: f64) -> project::Mask {
+        let mut mask = project::Mask::new("m", project::MaskShape::Ellipse);
+        mask.feather = 6.0;
+        mask.stroke.width = stroke;
+        mask
+    }
+    let rows: [(&str, fn(&mut project::Item), bool); 6] = [
+        ("plain", |_| {}, true),
+        ("masked", |item| item.masks.push(ellipse(0.0)), true),
+        ("stroke", |item| item.masks.push(ellipse(3.0)), false),
+        (
+            "multiply",
+            |item| item.blend_mode = project::BlendMode::Multiply,
+            false,
+        ),
+        (
+            "transform",
+            |item| {
+                item.animations
+                    .set(
+                        project::AnimationPath::new("transform.rotate").unwrap(),
+                        project::Param::new(project::ParamValue::Scalar(30.0)).unwrap(),
+                    )
+                    .unwrap();
+            },
+            false,
+        ),
+        (
+            "entry",
+            |item| {
+                item.effects.push(
+                    project::effect_definition("gamma_correction")
+                        .unwrap()
+                        .instance("gm")
+                        .with("gamma", EffectValue::Scalar(7.0))
+                        .unwrap(),
+                )
+            },
+            false,
+        ),
+    ];
+    let hooks = Hooks::default();
+    for (label, edit, resident) in rows {
+        let mut data = crate::support::solid_project(1, 64, 36, [100, 50, 20, 255]).into_data();
+        let item = data
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .next()
+            .unwrap();
+        item.effects.push(
+            project::effect_definition("color_grade")
+                .unwrap()
+                .instance("g")
+                .with("brightness", EffectValue::Scalar(30.0))
+                .unwrap(),
+        );
+        item.effects.push(
+            project::effect_definition("blur")
+                .unwrap()
+                .instance("b")
+                .with("intensity", EffectValue::Scalar(20.0))
+                .unwrap(),
+        );
+        edit(item);
+        let project = project::Project::new(data).unwrap();
+        let render = |settings: RenderSettings| {
+            Renderer::new(&project, settings)
+                .unwrap()
+                .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &hooks)
+                .unwrap()
+        };
+        let reference = render(RenderSettings::from_project(&project));
+        let device = Arc::new(Device(Mutex::default()));
+        let mut settings = RenderSettings::from_project(&project);
+        settings.effects = Some(device.clone());
+        assert_eq!(render(settings).pixels(), reference.pixels(), "{label}");
+        let calls = device.0.lock().unwrap();
+        if resident {
+            assert_eq!(calls.frames, [(2, 2, label == "masked")], "{label}");
+            assert_eq!(calls.applies, 0, "{label}: no per-run device call");
+        } else {
+            assert!(calls.frames.is_empty(), "{label}");
+            assert!(calls.applies > 0, "{label}: the run path keeps the scope");
+        }
+    }
+}
+
 const PIXEL_EFFECTS: [&str; 11] = [
     "black_white",
     "channel_mix",

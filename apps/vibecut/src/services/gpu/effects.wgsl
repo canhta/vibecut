@@ -292,12 +292,15 @@ fn rgb(mode: u32, b: vec3<f32>, s: vec3<f32>) -> vec3<f32> {
         default: { return vec3<f32>(channel(mode,b.r,s.r),channel(mode,b.g,s.g),channel(mode,b.b,s.b)); }
     }
 }
+// weights = [opacity, mode, coverage flag]; a set flag first scales all four
+// source channels by the prepared coverage's alpha, as render mask::scale_by.
 @compute @workgroup_size(8, 8)
 fn blend(@builtin(global_invocation_id) id: vec3<u32>) {
     if id.x >= p.width || id.y >= p.height { return; }
     let i = id.y*p.width+id.x;
     let b = below[i];
-    let s = src[i];
+    var s = src[i];
+    if weights[2] > 0.5 { s = s * coverage[i].a; }
     let opacity = weights[0];
     let a = s.a*opacity;
     let mode = u32(weights[1]);

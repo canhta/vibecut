@@ -14,7 +14,8 @@ mod whole_image;
 pub use denoise::reduce_noise_passes;
 pub(crate) use layers::adjust_backdrop;
 pub use layers::{
-    FrameLayer, MAX_FRAME_LAYERS, composite_layers, reference_layers, validate_layers,
+    FrameLayer, MAX_FRAME_LAYERS, RESIDENT_ENTRIES, composite_layers, reference_layers, resident,
+    validate_layers,
 };
 
 /// One shader uniform: what an effect hands a single-pass pixel op.

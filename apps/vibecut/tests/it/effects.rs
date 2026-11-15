@@ -1762,11 +1762,15 @@ fn heavy_unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
                 image: &other,
                 opacity: 1.0,
                 mode: Normal,
+                effects: &[],
+                coverage: None,
             },
             FrameLayer {
                 image: &input,
                 opacity: 0.5,
                 mode: Normal,
+                effects: &[],
+                coverage: None,
             },
         ];
         let frame = |layers: &[FrameLayer<'_>], hooks: &dyn ExecutionHooks| {
@@ -1790,17 +1794,126 @@ fn heavy_unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
         );
         assert_eq!(meter.budget.snapshot().unwrap().used, bytes);
         drop(actual);
-        // Three layers or a non-Normal mode decline before GPU work and equal the CPU path.
+        // Effect instances and prepared coverage stay resident: one upload per image, one
+        // dispatch per pass plus the blend, one submission and one readback. A mirror
+        // reads its own instance's input from the device checkpoint, charged before
+        // allocation like the coverage pair.
+        let resident = |effects: &[Vec<EffectPass>], coverage: Option<&Image>| {
+            let plan = [
+                layers[0],
+                FrameLayer {
+                    effects,
+                    coverage,
+                    ..layers[1]
+                },
+            ];
+            let expected = reference_layers(w, h, &plan, &Hooks).unwrap();
+            meter.take();
+            let before = gpu.work();
+            let actual = frame(&plan, &meter).unwrap();
+            let work = gpu.work();
+            let passes = effects.iter().map(Vec::len).sum::<usize>() + 1;
+            let mut want = vec![4 * bytes, 2 * bytes];
+            if effects
+                .iter()
+                .flatten()
+                .any(|p| p.entry_point() == "mirror")
+            {
+                want.push(bytes);
+            }
+            if coverage.is_some() {
+                want.push(2 * bytes);
+            }
+            want.extend([1024 * passes as u64, bytes]);
+            let requests = meter.take();
+            assert!(requests[0] > 0 && requests[0] <= 4096);
+            assert_eq!(&requests[1..], want);
+            parity(&actual, &expected);
+            assert_eq!(
+                [
+                    work.image_uploads - before.image_uploads,
+                    work.dispatches - before.dispatches,
+                    work.submissions - before.submissions,
+                    work.readbacks - before.readbacks,
+                ],
+                [2 + u64::from(coverage.is_some()), passes as u64, 1, 1]
+            );
+            assert_eq!(meter.budget.snapshot().unwrap().used, bytes);
+        };
+        // Two successive input-reading mirror instances around gaussian axes, grade and key.
+        let mut opening = vec![mirror(1.0, 0.0)];
+        opening.extend(grade.iter().cloned());
+        let mut keyed = chroma_key_passes([0.0, 0.0, 1.0, 1.0], 40.0, 0.0).unwrap();
+        keyed.push(mirror(0.0, 1.0));
+        let runs = vec![
+            opening,
+            Vec::new(),
+            blur_passes(5.0, 1920, 1080).unwrap(),
+            keyed,
+        ];
+        resident(&runs, None);
+        // Empty, full, half, feathered and combined add/subtract coverage over a keyed
+        // alpha, prepared by render's mask owner.
+        let split = |normal: [f32; 2], feather: f32, inverted: bool| {
+            render::mask::SplitMask {
+                center: [w as f32 / 2.0, h as f32 / 2.0],
+                normal,
+                feather,
+                expansion: 0.0,
+                opacity: 1.0,
+                inverted,
+            }
+            .coverage(w, h, &Hooks)
+            .unwrap()
+        };
+        let feathered = split([0.6, 0.8], 2.0, false);
+        let mut combined = Image::new(
+            w,
+            h,
+            [render::mask::initial(project::MaskMode::Add); 4],
+            &Hooks,
+        )
+        .unwrap();
+        render::mask::combine(&mut combined, &feathered, project::MaskMode::Add, &Hooks).unwrap();
+        render::mask::combine(
+            &mut combined,
+            &split([1.0, 0.0], 1.0, true),
+            project::MaskMode::Subtract,
+            &Hooks,
+        )
+        .unwrap();
+        let full = Image::new(w, h, [1.0; 4], &Hooks).unwrap();
+        let half = Image::new(w, h, [0.5; 4], &Hooks).unwrap();
+        let key = [chroma_key_passes([0.0, 0.0, 1.0, 1.0], 40.0, 0.0).unwrap()];
+        for coverage in [&zero, &full, &half, &feathered, &combined] {
+            resident(&key, Some(coverage));
+        }
+        resident(&runs, Some(&combined));
+        // Three layers, a non-Normal mode or a stack with a non-resident entry decline
+        // before GPU work and equal the CPU path.
         let third = FrameLayer {
             image: &start,
             opacity: 0.3,
             mode: Normal,
+            effects: &[],
+            coverage: None,
         };
         let multiply = FrameLayer {
             mode: project::BlendMode::Multiply,
             ..layers[1]
         };
-        for plan in [vec![layers[0], layers[1], third], vec![layers[0], multiply]] {
+        let mut unsupported = runs.clone();
+        unsupported.push(vec![pixel("gamma", &[0.7])]);
+        let mixed = FrameLayer {
+            effects: &unsupported,
+            coverage: Some(&half),
+            ..layers[1]
+        };
+        for plan in [
+            vec![layers[0], layers[1], third],
+            vec![layers[0], multiply],
+            vec![layers[0], mixed],
+        ] {
             let before = gpu.work();
             let out = frame(&plan, &meter).unwrap();
             assert_eq!(gpu.work(), before, "unsupported plan did no GPU work");
@@ -1810,6 +1923,24 @@ fn heavy_unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
             );
         }
         meter.take();
+        // Coverage of the wrong geometry is Invalid before any charge or GPU work.
+        let wide = Image::new(w + 1, h, [1.0; 4], &Hooks).unwrap();
+        let before = gpu.work();
+        assert!(matches!(
+            frame(
+                &[
+                    layers[0],
+                    FrameLayer {
+                        coverage: Some(&wide),
+                        ..layers[1]
+                    }
+                ],
+                &meter
+            ),
+            Err(Error::Invalid(_))
+        ));
+        assert!(meter.take().is_empty());
+        assert_eq!(gpu.work(), before);
         // Cancellation and byte refusal propagate unpublished, with no GPU work.
         let before = gpu.work();
         meter.cancel.store(true, Ordering::SeqCst);
@@ -1890,36 +2021,67 @@ fn heavy_unused_gpu_inputs_preserve_pixels_with_a_smaller_budget() {
     }
     // Pressure at the 768 MiB budget: 1080p fits its resident working set; 4K is refused
     // by byte admission before any native buffer or work, and nothing leaks.
+    // The probe's unchanged three-effect stack with a prepared half coverage takes the
+    // same admission: inputs and coverage are charged once by their owners, then 8I
+    // resident; at 1080p that is five dispatches and one readback.
     let pressure = Meter::new(768 << 20);
     for (w, h, fits) in [(1920, 1080, true), (3840, 2160, false)] {
         let bytes = Image::bytes(w, h).unwrap();
         let base = Image::new(w, h, [0.1, 0.2, 0.4, 0.5], &pressure).unwrap();
         let top = Image::new(w, h, [0.2, 0.1, 0.3, 0.4], &pressure).unwrap();
-        let layers = [
+        let half = Image::new(w, h, [0.5; 4], &pressure).unwrap();
+        let three = [
+            grade_passes(20.0, 0.0, 20.0, 0.0).unwrap(),
+            chroma_key_passes([0.0, 1.0, 0.0, 1.0], 40.0, 0.0).unwrap(),
+            blur_passes(10.0, w, h).unwrap(),
+        ];
+        let plain = [
             FrameLayer {
                 image: &base,
                 opacity: 1.0,
                 mode: Normal,
+                effects: &[],
+                coverage: None,
             },
             FrameLayer {
                 image: &top,
                 opacity: 0.5,
                 mode: Normal,
+                effects: &[],
+                coverage: None,
             },
         ];
-        let before = gpu.work();
-        let result = composite_layers(w, h, &layers, gpu.as_ref(), &pressure);
-        if fits {
-            let actual = result.unwrap();
-            parity(&actual, &reference_layers(w, h, &layers, &Hooks).unwrap());
-            assert_eq!(pressure.budget.snapshot().unwrap().used, 3 * bytes);
-            assert_eq!(gpu.work().submissions - before.submissions, 1);
-        } else {
-            assert!(matches!(result, Err(Error::Budget { .. })));
-            assert_eq!(gpu.work(), before, "refused before native work");
-            assert_eq!(pressure.budget.snapshot().unwrap().used, 2 * bytes);
+        let stacked = [
+            plain[0],
+            FrameLayer {
+                effects: &three,
+                coverage: Some(&half),
+                ..plain[1]
+            },
+        ];
+        for (layers, dispatches) in [(plain, 1), (stacked, 5)] {
+            let before = gpu.work();
+            let result = composite_layers(w, h, &layers, gpu.as_ref(), &pressure);
+            if fits {
+                let actual = result.unwrap();
+                parity(&actual, &reference_layers(w, h, &layers, &Hooks).unwrap());
+                assert_eq!(pressure.budget.snapshot().unwrap().used, 4 * bytes);
+                let work = gpu.work();
+                assert_eq!(
+                    [
+                        work.dispatches - before.dispatches,
+                        work.submissions - before.submissions,
+                        work.readbacks - before.readbacks,
+                    ],
+                    [dispatches, 1, 1]
+                );
+            } else {
+                assert!(matches!(result, Err(Error::Budget { .. })));
+                assert_eq!(gpu.work(), before, "refused before native work");
+                assert_eq!(pressure.budget.snapshot().unwrap().used, 3 * bytes);
+            }
         }
-        drop((base, top));
+        drop((base, top, half));
         assert_eq!(pressure.budget.snapshot().unwrap().used, 0);
     }
 }
