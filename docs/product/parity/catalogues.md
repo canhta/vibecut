@@ -1,6 +1,6 @@
 # Effects, transitions, filters, adjustment
 
-Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rule: [parity](README.md).
+Snapshot of main `324f5544` on 2026-11-15. Legend, evidence names and update rule: [parity](README.md).
 
 ## Effects (FX)
 
@@ -23,7 +23,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | FX-14 | Pro diamond on tiles | Out of scope | — | web 08 | Accounts |
 | FX-15 | Drop tile onto timeline | Partial | Differs | web 15 | Ours attaches to a clip |
 | FX-16 | Click tile applies | Partial | Differs | web 15 | Ours: selected clip, not playhead |
-| FX-17 | Catalogue breadth | Partial | — | | E2 set (26) built with point handles; GPU entries written, native parity and timing unmeasured |
+| FX-17 | Catalogue breadth | Partial | — | | E2 set (26) built with point handles; 25 GPU entries within 2e-5 on UHD 770, eight warps stay CPU; 1080p preview over budget |
 
 ## Transitions (TRANS)
 
