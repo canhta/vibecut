@@ -1,4 +1,4 @@
-//! Signing, notarization and credential lifecycle for macOS distribution artifacts.
+//! Signing, notarization and credential lifecycle for distribution artifacts.
 use super::package;
 use super::{Host, Result, Tools, arg, field, fresh, text, write_json};
 use serde_json::{Value, json};
@@ -90,7 +90,7 @@ fn validate(env: &BTreeMap<String, String>) -> Result<()> {
 fn state(tools: &Tools) -> PathBuf {
     tools.runner_temp.join("vibecut-signing")
 }
-fn private_file(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(super) fn private_file(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -104,7 +104,7 @@ fn private_file(path: &Path, bytes: &[u8]) -> Result<()> {
         .write_all(bytes)
         .map_err(|e| e.to_string())
 }
-fn decode_base64(value: &str) -> Result<Vec<u8>> {
+pub(super) fn decode_base64(value: &str) -> Result<Vec<u8>> {
     if !value.len().is_multiple_of(4) || value.len() > 16 * 1024 * 1024 {
         return Err("invalid certificate encoding".into());
     }

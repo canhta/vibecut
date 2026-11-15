@@ -133,33 +133,40 @@ fn finish(
         binaries: binaries.into(),
         output: tools.root.join("target/package"),
     };
+    // Windows signs inside its own packaging from optional secrets; Linux is unsigned.
+    let signed = signed && tools.host == Host::Mac;
     if signed {
         signing::package(tools, &request)?;
     } else {
         package::package(tools, &request, &signing::Config::unsigned())?;
     }
-    let suffix = if signed {
-        "dmg"
+    let suffixes: &[&str] = if signed {
+        &["dmg"]
     } else if tools.host == Host::Mac {
-        "pkg"
+        &["pkg"]
     } else if tools.host == Host::Linux {
-        "gz"
+        &["gz"]
     } else {
-        "zip"
+        &["zip", "msi"]
     };
-    let files = package::files_with(&request.output, suffix)?;
-    if files.len() != 1 {
-        return Err("expected exactly one distribution package".into());
-    }
-    let file = files.first().ok_or("package missing")?;
-    let name = file.file_name().ok_or("package filename")?;
     let dist = tools.root.join("target/dist");
-    copy(file, &dist.join(name))?;
-    fs::write(
-        dist.join(format!("{}.sha256", name.to_string_lossy())),
-        format!("{}  {}\n", digest(file)?, name.to_string_lossy()),
-    )
-    .map_err(|e| e.to_string())
+    for suffix in suffixes {
+        let files = package::files_with(&request.output, suffix)?;
+        if files.len() != 1 {
+            return Err(format!(
+                "expected exactly one .{suffix} distribution package"
+            ));
+        }
+        let file = files.first().ok_or("package missing")?;
+        let name = file.file_name().ok_or("package filename")?;
+        copy(file, &dist.join(name))?;
+        fs::write(
+            dist.join(format!("{}.sha256", name.to_string_lossy())),
+            format!("{}  {}\n", digest(file)?, name.to_string_lossy()),
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 pub(super) fn native(tools: &mut Tools, o: &Options) -> Result<()> {
     let arch = o.get("--arch")?;

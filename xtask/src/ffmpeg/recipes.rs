@@ -137,20 +137,61 @@ pub(super) fn build_zlib(
         .args(["--parallel", "3"]))?;
     run(Command::new("cmake").arg("--install").arg(&build))?;
     if cfg!(windows) {
-        // zlib 1.4 names its Windows static archive libzs.a, but its
-        // pkg-config template still requests -lz (the shared import library).
-        // Point FFmpeg at our static archive instead of a system zlib.
-        let metadata = prefix.join("lib/pkgconfig/zlib.pc");
-        let contents = fs::read_to_string(&metadata).map_err(|e| e.to_string())?;
-        fs::write(
-            metadata,
-            contents
-                .replace(" -lz\n", " -lzs\n")
-                .replace(" -lz\r\n", " -lzs\r\n"),
-        )
-        .map_err(|e| e.to_string())?;
+        // zlib 1.4 names its Windows static archive libzs.a, while its
+        // pkg-config file and FFmpeg's fallback probe both link -lz. The
+        // toolchain ships a shared zlib import library under that name, so a
+        // libz.a in the prefix, searched first, keeps zlib1.dll out of FFmpeg.
+        fs::copy(prefix.join("lib/libzs.a"), prefix.join("lib/libz.a"))
+            .map_err(|e| format!("zlib static archive: {e}"))?;
     }
     Ok(())
+}
+
+/// Shadows the toolchain's winpthreads import libraries with its static
+/// archive inside the prefix, whose `-L` precedes the toolchain's: libvpx's
+/// `-lpthread` then links statically and no FFmpeg DLL imports
+/// libwinpthread-1.dll. Returns the licence text the static copy obliges.
+fn windows_static_threads(prefix: &Path) -> Result<PathBuf, String> {
+    let archive = PathBuf::from(
+        capture(Command::new("clang").arg("-print-file-name=libwinpthread.a"))?.trim(),
+    );
+    if !archive.is_absolute() || !archive.is_file() {
+        return Err(format!(
+            "toolchain static winpthreads archive not found: {}",
+            archive.display()
+        ));
+    }
+    for name in ["libpthread.a", "libwinpthread.a"] {
+        fs::copy(&archive, prefix.join("lib").join(name))
+            .map_err(|e| format!("winpthreads static archive: {e}"))?;
+    }
+    let licence = archive
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("winpthreads archive has no toolchain root")?
+        .join("share/licenses/winpthreads/COPYING");
+    if !licence.is_file() {
+        return Err(format!(
+            "winpthreads licence missing: {}",
+            licence.display()
+        ));
+    }
+    Ok(licence)
+}
+
+/// Opus 1.6.1's CMake claims ARM runtime CPU detection on every Windows
+/// target, but `celt/arm/armcpu.c` implements the Windows probe for MSVC only,
+/// so MinGW Clang cannot compile it. AArch64 mandates Advanced SIMD, so
+/// presuming NEON calls the same NEON kernels detection would select.
+fn opus_windows_arm64_flags(target: &str) -> Vec<String> {
+    if target == "windows-aarch64" {
+        vec![
+            "-DOPUS_MAY_HAVE_NEON=OFF".into(),
+            "-DOPUS_PRESUME_NEON=ON".into(),
+        ]
+    } else {
+        Vec::new()
+    }
 }
 pub(super) fn build_source(
     base: &Path,
@@ -162,8 +203,11 @@ pub(super) fn build_source(
 ) -> Result<(), String> {
     let patches = patches()?;
     let patch_id = patch_id(&patches)?;
+    // Windows prefixes link zlib and winpthreads statically; the suffix keeps
+    // older prefixes that import zlib1.dll or libwinpthread-1.dll from reuse.
     let prefix = base.join(format!(
-        "{version}-opus{opus}-vpx{vpx}-zlib{zlib}-lame{LAME_VERSION}-{patch_id}"
+        "{version}-opus{opus}-vpx{vpx}-zlib{zlib}-lame{LAME_VERSION}-{patch_id}{}",
+        if cfg!(windows) { "-static-runtime" } else { "" }
     ));
     if prefix.join("BUILD.txt").exists() {
         record_patches(&prefix, &patches)?;
@@ -247,8 +291,13 @@ pub(super) fn build_source(
     } else {
         "x86_64"
     };
-    fs::create_dir_all(&prefix).map_err(|e| e.to_string())?;
+    fs::create_dir_all(prefix.join("lib")).map_err(|e| e.to_string())?;
     build_zlib(&zl, &prefix, target, arch)?;
+    let threads = if cfg!(windows) {
+        Some(windows_static_threads(&prefix)?)
+    } else {
+        None
+    };
     run(Command::new("cmake")
         .arg("-S")
         .arg(&op)
@@ -275,7 +324,8 @@ pub(super) fn build_source(
                 "-DCMAKE_C_COMPILER=clang".into(),
                 "-DCMAKE_CXX_COMPILER=clang++".into(),
             ]
-        }))?;
+        })
+        .args(opus_windows_arm64_flags(target)))?;
     run(Command::new("cmake")
         .arg("--build")
         .arg(op.join(target))
@@ -451,9 +501,14 @@ pub(super) fn build_source(
         )
         .map_err(|e| e.to_string())?;
     }
+    if let Some(licence) = &threads {
+        fs::copy(licence, compliance.join("winpthreads-COPYING")).map_err(|e| e.to_string())?;
+        receipt.push_str("winpthreads flags: static toolchain archive for libvpx threads\n");
+    }
     record_patches(&prefix, &patches)?;
     receipt.push_str(&format!(
-        "zlib flags: static, PIC, architecture {arch}\nopus flags: static PIC, DNN off, architecture {arch}\nlame flags: static PIC, encoder only (no frontend, no mpglib decoder), architecture {arch}\nlibvpx flags: {vpflags:?}\nFFmpeg configure: {flags:?}\n"
+        "zlib flags: static, PIC, architecture {arch}\nopus flags: static PIC, DNN off, architecture {arch} {:?}\nlame flags: static PIC, encoder only (no frontend, no mpglib decoder), architecture {arch}\nlibvpx flags: {vpflags:?}\nFFmpeg configure: {flags:?}\n",
+        opus_windows_arm64_flags(target)
     ));
     fs::write(prefix.join("BUILD.txt"), receipt).map_err(|e| e.to_string())?;
     fs::write(base.join("current"), prefix.as_os_str().as_encoded_bytes())

@@ -485,6 +485,7 @@ fn build(tools: &mut Tools, prefix: &Path, output: &Path, debug: bool) -> Result
             || key.starts_with("APPLE_")
             || key.starts_with("VIBECUT_MAC_")
             || key.starts_with("VIBECUT_NOTARY_")
+            || key.starts_with("VIBECUT_WINDOWS_")
     }) {
         command.env_remove(key);
     }

@@ -58,21 +58,20 @@ fn required(tools: &mut Tools, path: &str) -> Result<Value> {
 }
 fn files(tools: &Tools, directory: &Path, release: bool) -> Result<Vec<PathBuf>> {
     let suffix = if release { "dmg" } else { "pkg" };
-    let required: BTreeSet<_> = ["aarch64", "x86_64", "universal"]
+    let mut required: BTreeSet<_> = ["aarch64", "x86_64", "universal"]
         .iter()
         .map(|arch| format!("vibecut-{}-macos-{arch}.{suffix}", tools.version()))
         .collect();
-    let mut allowed = required.clone();
-    if !release {
-        for arch in ["aarch64", "x86_64"] {
-            allowed.insert(format!("vibecut-{}-windows-{arch}.zip", tools.version()));
+    for arch in ["aarch64", "x86_64"] {
+        for kind in ["zip", "msi"] {
+            required.insert(format!("vibecut-{}-windows-{arch}.{kind}", tools.version()));
         }
     }
     let mut packages = Vec::new();
     for path in entries(directory)? {
         if !matches!(
             path.extension().and_then(OsStr::to_str),
-            Some("pkg" | "zip" | "dmg")
+            Some("pkg" | "zip" | "dmg" | "msi")
         ) {
             continue;
         }
@@ -80,7 +79,7 @@ fn files(tools: &Tools, directory: &Path, release: bool) -> Result<Vec<PathBuf>>
             .file_name()
             .and_then(OsStr::to_str)
             .ok_or("asset filename UTF-8")?;
-        if !allowed.contains(name)
+        if !required.contains(name)
             || path.is_symlink()
             || fs::metadata(&path).map_err(|e| e.to_string())?.len() == 0
         {
@@ -93,7 +92,9 @@ fn files(tools: &Tools, directory: &Path, release: bool) -> Result<Vec<PathBuf>>
         .filter_map(|p| p.file_name().and_then(OsStr::to_str))
         .collect();
     if !required.iter().all(|name| actual.contains(name.as_str())) {
-        return Err("all three macOS distributions must pass before publication".into());
+        return Err(
+            "all three macOS and four Windows distributions must pass before publication".into(),
+        );
     }
     let sums = directory.join("SHA256SUMS");
     let mut lines = String::new();
@@ -145,7 +146,7 @@ fn publish(
         {
             return Err("existing version tag differs from verified commit".into());
         }
-        "Signed and notarized macOS arm64, x86_64 and universal DMGs; clean-runner app/CLI smoke passed on both architectures.\n".to_owned()
+        "Signed and notarized macOS arm64, x86_64 and universal DMGs; Windows x86_64 and arm64 MSI installers and portable ZIPs, signed when the release certificate is configured. Clean-runner app/CLI smoke passed on every architecture.\n".to_owned()
     } else {
         if field(&required(tools, "git/ref/heads/main")?, "/object/sha").as_str()
             != Some(sha.as_str())
@@ -219,9 +220,7 @@ fn publish(
                 "\nFull commit list: https://github.com/{repo}/compare/{previous}...{sha}\n"
             ));
         }
-        notes.push_str(
-            "\nWindows targets are advisory until p0-core/44. These builds are not notarized.\n",
-        );
+        notes.push_str("\nThese builds are not signed or notarized.\n");
         if notes.len() > 120_000 {
             return Err("nightly commit notes exceed the release-body limit".into());
         }
@@ -363,6 +362,15 @@ mod publication_tests {
                 b"synthetic package",
             )
             .expect("package");
+        }
+        for arch in ["aarch64", "x86_64"] {
+            for kind in ["zip", "msi"] {
+                fs::write(
+                    root.join(format!("vibecut-{version}-windows-{arch}.{kind}")),
+                    b"synthetic package",
+                )
+                .expect("package");
+            }
         }
     }
     fn response(value: Option<Value>) -> Captured {

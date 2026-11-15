@@ -1,0 +1,29 @@
+<!-- VibeCut per-machine installer. `cargo xtask dist package` builds it with WiX 5 from the audited payload. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="VibeCut" Manufacturer="VibeCut" Version="$(Version)" UpgradeCode="12C667B9-FC35-4E8D-A491-B4A3ED9382F8" Scope="perMachine">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of VibeCut is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="VibeCut" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="VibeCut">
+      <Component Directory="INSTALLFOLDER">
+        <File Source="!(bindpath.payload)\vibecut.exe">
+          <Shortcut Name="VibeCut" Directory="ProgramMenuFolder" WorkingDirectory="INSTALLFOLDER" />
+        </File>
+      </Component>
+      <!-- vibecut-cli on the machine PATH; uninstall removes the entry. -->
+      <Component Id="CliPath" Directory="INSTALLFOLDER" Guid="E169A255-DC0C-4E80-9024-EB03D5F13C15">
+        <Environment Id="CliPath" Name="PATH" Value="[INSTALLFOLDER]" Action="set" Part="last" System="yes" Permanent="no" />
+        <RegistryValue Root="HKLM" Key="Software\VibeCut" Name="CliPath" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      <!-- CLI, FFmpeg DLLs and compliance texts, sources and recipe. -->
+      <Files Directory="INSTALLFOLDER" Include="!(bindpath.payload)\**">
+        <Exclude Files="!(bindpath.payload)\vibecut.exe" />
+      </Files>
+    </Feature>
+  </Package>
+</Wix>

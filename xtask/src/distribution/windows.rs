@@ -1,9 +1,9 @@
-//! Windows packaging: PE audit, bundled DLL set, signing and ZIP archive.
+//! Windows packaging: PE audit, bundled DLL set, signing, portable ZIP and MSI.
 use super::package::{self, Request};
-use super::{Result, Tools, copy, digest, entries, insert, manifest, write_json};
+use super::{Result, Temp, Tools, copy, digest, entries, insert, manifest, signing};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -267,57 +267,18 @@ pub(super) fn package(
     }
     audit(tools, &files, &r.arch)?;
     package::compliance(tools, prefix, &payload.join("compliance"))?;
-    for name in ["install.ps1", "uninstall.ps1"] {
-        copy(
-            &tools.root.join("packaging/windows").join(name),
-            &payload.join(name),
-        )?;
-    }
-    if let Some(certificate) = tools.env.get("VIBECUT_WINDOWS_CERT_SHA1").cloned() {
-        let timestamp = tools
-            .env
-            .get("VIBECUT_WINDOWS_TIMESTAMP_URL")
-            .cloned()
-            .ok_or("Windows signing timestamp URL missing")?;
+    let signer = signer(tools)?;
+    if let Some(signer) = &signer {
         for path in package::files_with(&payload, "dll")?
             .into_iter()
             .chain([payload.join("vibecut-cli.exe"), payload.join("vibecut.exe")])
         {
-            run!(
-                tools,
-                "signtool",
-                "sign",
-                "/sha1",
-                &certificate,
-                "/fd",
-                "SHA256",
-                "/tr",
-                &timestamp,
-                "/td",
-                "SHA256",
-                &path
-            )?;
-            run!(tools, "signtool", "verify", "/pa", "/all", &path)?;
-        }
-        for name in ["uninstall.ps1", "install.ps1"] {
-            run!(
-                tools,
-                "powershell",
-                "-NoProfile",
-                "-File",
-                tools.root.join("packaging/windows/sign-script.ps1"),
-                payload.join(name),
-                &certificate,
-                &timestamp
-            )?;
+            sign(tools, signer, &path)?;
         }
     }
-    write_json(&payload.join("install-manifest.json"), &manifest(&payload)?)?;
-    let zip = output.join(format!(
-        "vibecut-{}-windows-{}.zip",
-        tools.version(),
-        r.arch
-    ));
+    insert(receipt, "signed", json!(signer.is_some()))?;
+    let stem = format!("vibecut-{}-windows-{}", tools.version(), r.arch);
+    let zip = output.join(format!("{stem}.zip"));
     let script = "$ErrorActionPreference='Stop'; Compress-Archive -LiteralPath $env:VIBECUT_ZIP_SOURCE -DestinationPath $env:VIBECUT_ZIP_TARGET";
     let mut command = Command::new("powershell");
     command
@@ -327,8 +288,110 @@ pub(super) fn package(
     if tools.execute(&mut command, Duration::from_secs(600))?.code != Some(0) {
         return Err("Windows archive creation failed".into());
     }
-    insert(receipt, "package_sha256", json!(digest(&zip)?))?;
+    let msi = output.join(format!("{stem}.msi"));
+    installer(tools, &r.arch, &payload, &msi)?;
+    if let Some(signer) = &signer {
+        sign(tools, signer, &msi)?;
+    }
+    insert(
+        receipt,
+        "package_sha256",
+        json!({"zip":digest(&zip)?,"msi":digest(&msi)?}),
+    )?;
     insert(receipt, "files", manifest(&payload)?)?;
+    Ok(())
+}
+
+/// Builds the per-machine MSI from the audited payload with WiX 5.
+fn installer(tools: &mut Tools, arch: &str, payload: &Path, msi: &Path) -> Result<()> {
+    let mut bind = OsString::from("payload=");
+    bind.push(payload);
+    let mut command = Command::new("wix");
+    command
+        .arg("build")
+        .args(["-arch", if arch == "aarch64" { "arm64" } else { "x64" }])
+        .arg("-d")
+        .arg(format!("Version={}", tools.version()))
+        .arg("-bindpath")
+        .arg(bind)
+        .arg("-o")
+        .arg(msi)
+        .arg(tools.root.join("packaging/windows/vibecut.wxs"))
+        .current_dir(&tools.root);
+    let result = tools.execute(&mut command, Duration::from_secs(600))?;
+    if result.code != Some(0) {
+        // WiX diagnostics name only authoring and payload paths, never credentials.
+        eprintln!(
+            "{}{}",
+            tools.redact(&result.stdout),
+            tools.redact(&result.stderr)
+        );
+        return Err(format!("WiX MSI build failed ({:?})", result.code));
+    }
+    Ok(())
+}
+
+/// Release signing material; absent secrets skip signing with a visible warning.
+struct Signer {
+    _directory: Temp,
+    certificate: PathBuf,
+    password: String,
+    timestamp: String,
+}
+
+fn signer(tools: &mut Tools) -> Result<Option<Signer>> {
+    let value = |tools: &Tools, key: &str| {
+        tools
+            .env
+            .get(key)
+            .filter(|value| !value.trim().is_empty())
+            .cloned()
+    };
+    let Some(encoded) = value(tools, "VIBECUT_WINDOWS_CERT_PFX") else {
+        let message =
+            "VIBECUT_WINDOWS_CERT_PFX is not set, so the Windows ZIP and MSI are unsigned";
+        if tools.env.get("GITHUB_ACTIONS").is_some_and(|v| v == "true") {
+            println!("::warning title=Windows signing skipped::{message}");
+        } else {
+            println!("warning: Windows signing skipped: {message}");
+        }
+        return Ok(None);
+    };
+    let password = value(tools, "VIBECUT_WINDOWS_CERT_PASSWORD")
+        .ok_or("Windows signing needs VIBECUT_WINDOWS_CERT_PASSWORD")?;
+    let timestamp = value(tools, "VIBECUT_WINDOWS_TIMESTAMP_URL")
+        .ok_or("Windows signing needs VIBECUT_WINDOWS_TIMESTAMP_URL")?;
+    tools.secrets.push(password.clone());
+    let directory = Temp::new(&tools.runner_temp)?;
+    let certificate = directory.0.join("certificate.pfx");
+    let encoded: String = encoded.split_whitespace().collect();
+    signing::private_file(&certificate, &signing::decode_base64(&encoded)?)?;
+    Ok(Some(Signer {
+        _directory: directory,
+        certificate,
+        password,
+        timestamp,
+    }))
+}
+
+fn sign(tools: &mut Tools, signer: &Signer, path: &Path) -> Result<()> {
+    run!(
+        tools,
+        "signtool",
+        "sign",
+        "/f",
+        &signer.certificate,
+        "/p",
+        &signer.password,
+        "/fd",
+        "SHA256",
+        "/tr",
+        &signer.timestamp,
+        "/td",
+        "SHA256",
+        path
+    )?;
+    run!(tools, "signtool", "verify", "/pa", path)?;
     Ok(())
 }
 

@@ -97,6 +97,11 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
         admitted_names.push("x264");
     }
     admitted_names.extend(["opus", "libvpx", "lame", "zlib"]);
+    // Windows FFmpeg links the toolchain's winpthreads statically.
+    let windows = receipt.contains("--target-os=mingw32");
+    if windows {
+        admitted_names.push("winpthreads");
+    }
     for admitted in admitted_names {
         let matching: Vec<_> = names
             .iter()
@@ -109,6 +114,7 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
                     "opus" => name.starts_with("opus-") && name.ends_with("-COPYING"),
                     "lame" => name.starts_with("lame-") && name.ends_with("-COPYING"),
                     "zlib" => name.starts_with("zlib-") && name.ends_with("-LICENSE"),
+                    "winpthreads" => name == "winpthreads-COPYING",
                     _ => name.starts_with("libvpx-") && name.ends_with("-LICENSE"),
                 }
             })
@@ -211,6 +217,8 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
     )?;
     let licence = if gpl {
         "GPL-3.0 FFmpeg with libx264, Opus, libvpx, LAME and zlib"
+    } else if windows {
+        "LGPL-2.1-or-later FFmpeg with Opus, libvpx, LAME, zlib and MinGW-w64 winpthreads"
     } else {
         "LGPL-2.1-or-later FFmpeg with Opus, libvpx, LAME and zlib"
     };
@@ -432,6 +440,28 @@ mod tests {
                 .expect_err("missing zlib artifact must be refused");
             assert!(error.contains(expected), "{removed}: {error}");
         }
+    }
+
+    /// Windows FFmpeg once imported libwinpthread-1.dll; linking it statically
+    /// obliges the winpthreads licence text in every Windows package.
+    #[test]
+    fn windows_receipt_requires_the_static_winpthreads_licence() {
+        let temp = Temp::new(&env::temp_dir()).expect("temp");
+        let prefix = sdk(&temp.0);
+        let tools = Tools::new(&workspace());
+        let receipt = text(&prefix.join("BUILD.txt")).expect("receipt") + "--target-os=mingw32\n";
+        fs::write(prefix.join("BUILD.txt"), receipt).expect("receipt");
+        assert!(
+            compliance(&tools, &prefix, &temp.0.join("rejected"))
+                .expect_err("must refuse")
+                .contains("winpthreads")
+        );
+        fs::write(
+            prefix.join("compliance/winpthreads-COPYING"),
+            b"license fixture",
+        )
+        .expect("license");
+        compliance(&tools, &prefix, &temp.0.join("valid")).expect("complete Windows distribution");
     }
 
     #[cfg(unix)]

@@ -287,18 +287,15 @@ fn mapped(output: &str, app: &Path) -> Result<()> {
 }
 pub(super) fn install(tools: &mut Tools, o: &Options) -> Result<()> {
     let downloaded = tools.root.join("target/download");
+    if tools.host == Host::Windows {
+        return windows_install(tools, &downloaded);
+    }
     let suffix = if tools.host == Host::Mac {
         if o.has("--signed") { "dmg" } else { "pkg" }
-    } else if tools.host == Host::Linux {
-        "gz"
     } else {
-        "zip"
+        "gz"
     };
-    let packages = package::files_with(&downloaded, suffix)?;
-    if packages.len() != 1 {
-        return Err("expected one downloaded distribution".into());
-    }
-    let file = packages.first().ok_or("download missing")?;
+    let file = &single(&downloaded, suffix)?;
     if tools.host == Host::Mac && o.has("--signed") {
         run!(tools, "codesign", "--verify", "--strict", file)?;
         macos::validate_staple(tools, file)?;
@@ -342,7 +339,7 @@ pub(super) fn install(tools: &mut Tools, o: &Options) -> Result<()> {
     } else if tools.host == Host::Mac {
         run!(tools, "sudo", "installer", "-pkg", file, "-target", "/")?;
         installed_smoke(tools, "/Applications/VibeCut.app", false)
-    } else if tools.host == Host::Linux {
+    } else {
         let target = tools.root.join("target/installed");
         if target.exists() {
             fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
@@ -362,32 +359,123 @@ pub(super) fn install(tools: &mut Tools, o: &Options) -> Result<()> {
             root.to_str().ok_or("installed path is not UTF-8")?,
             false,
         )
-    } else {
-        let target = tools.root.join("target/installed");
-        let mut command = Command::new("powershell");
-        command.args(["-NoProfile","-Command","$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath $env:VIBECUT_ZIP_SOURCE -DestinationPath $env:VIBECUT_ZIP_TARGET"]).env("VIBECUT_ZIP_SOURCE",file).env("VIBECUT_ZIP_TARGET",&target);
-        if tools.execute(&mut command, Duration::from_secs(120))?.code != Some(0) {
-            return Err("Windows archive extraction failed".into());
-        }
-        let path = target.join("VibeCut");
-        installed_smoke(tools, path.to_str().ok_or("install path UTF-8")?, false)
     }
 }
+fn single(downloaded: &Path, suffix: &str) -> Result<PathBuf> {
+    let packages = package::files_with(downloaded, suffix)?;
+    match packages.as_slice() {
+        [file] => Ok(file.clone()),
+        _ => Err(format!("expected one downloaded .{suffix} distribution")),
+    }
+}
+/// Smokes the portable ZIP in place, then installs the MSI, smokes the
+/// installed copy and requires uninstall to remove its files, Start menu
+/// shortcut and machine PATH entry.
+fn windows_install(tools: &mut Tools, downloaded: &Path) -> Result<()> {
+    let zip = single(downloaded, "zip")?;
+    let msi = single(downloaded, "msi")?;
+    let smoke = tools.root.join("target/smoke");
+    let portable = tools.root.join("target/portable");
+    let mut command = Command::new("powershell");
+    command.args(["-NoProfile","-Command","$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath $env:VIBECUT_ZIP_SOURCE -DestinationPath $env:VIBECUT_ZIP_TARGET"]).env("VIBECUT_ZIP_SOURCE",&zip).env("VIBECUT_ZIP_TARGET",&portable);
+    if tools.execute(&mut command, Duration::from_secs(120))?.code != Some(0) {
+        return Err("Windows archive extraction failed".into());
+    }
+    smoke_into(
+        tools,
+        &portable.join("VibeCut"),
+        false,
+        &smoke.join("portable"),
+    )?;
+    let installed = PathBuf::from(
+        tools
+            .variable("ProgramW6432")
+            .ok_or("ProgramW6432 is not set")?,
+    )
+    .join("VibeCut");
+    let shortcut = PathBuf::from(
+        tools
+            .variable("ProgramData")
+            .ok_or("ProgramData is not set")?,
+    )
+    .join(r"Microsoft\Windows\Start Menu\Programs\VibeCut.lnk");
+    if installed.exists() || shortcut.exists() {
+        return Err("VibeCut is already installed on this host".into());
+    }
+    run!(
+        tools,
+        "msiexec",
+        "/i",
+        &msi,
+        "/qn",
+        "/norestart",
+        "/l*v",
+        smoke.join("msi-install.log")
+    )?;
+    let result = (|| {
+        if !installed.join("vibecut-cli.exe").is_file() || !shortcut.is_file() {
+            return Err("MSI did not install the CLI and Start menu shortcut".into());
+        }
+        if !machine_path(tools)?.contains(&installed) {
+            return Err("MSI did not put the CLI on the machine PATH".into());
+        }
+        smoke_into(tools, &installed, false, &smoke.join("msi"))
+    })();
+    let removed = run!(
+        tools,
+        "msiexec",
+        "/x",
+        &msi,
+        "/qn",
+        "/norestart",
+        "/l*v",
+        smoke.join("msi-uninstall.log")
+    )
+    .map(|_| ());
+    result.and(removed)?;
+    if installed.exists() || shortcut.exists() {
+        return Err("MSI uninstall left installed files behind".into());
+    }
+    if machine_path(tools)?.contains(&installed) {
+        return Err("MSI uninstall left the machine PATH entry".into());
+    }
+    Ok(())
+}
+fn machine_path(tools: &mut Tools) -> Result<Vec<PathBuf>> {
+    let path = run!(
+        tools,
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        "[Environment]::GetEnvironmentVariable('Path','Machine')"
+    )?;
+    Ok(path
+        .trim()
+        .split(';')
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| PathBuf::from(entry.trim_end_matches('\\')))
+        .collect())
+}
 fn installed_smoke(tools: &mut Tools, installed: &str, signed: bool) -> Result<()> {
+    let output = tools.root.join("target/smoke");
+    smoke_into(tools, Path::new(installed), signed, &output)
+}
+fn smoke_into(tools: &mut Tools, installed: &Path, signed: bool, output: &Path) -> Result<()> {
     let mut flags = Vec::new();
     if signed {
         flags.push("--signed".into());
     }
     let values = BTreeMap::from([
-        ("--installed".into(), installed.into()),
+        (
+            "--installed".into(),
+            installed
+                .to_str()
+                .ok_or("installed path is not UTF-8")?
+                .into(),
+        ),
         (
             "--output".into(),
-            tools
-                .root
-                .join("target/smoke")
-                .to_str()
-                .ok_or("smoke path")?
-                .into(),
+            output.to_str().ok_or("smoke path is not UTF-8")?.into(),
         ),
     ]);
     run(tools, &Options { flags, values })
