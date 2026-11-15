@@ -1010,9 +1010,16 @@ fn fake_brand_copy(
 ) -> engine::control::Result<std::path::PathBuf> {
     Ok(dir.join(format!("brand-{media}")))
 }
-/// A brand kit lend with no active kit, so the `brand.*` commands answer without a store.
-pub(crate) fn brand_access() -> engine::control::BrandAccess<'static> {
-    engine::control::BrandAccess::new(&fake_brand_list, &fake_brand_edit, &fake_brand_copy)
+/// A brand kit store with no active kit, so the `brand.*` commands answer without a store.
+pub(crate) struct FakeBrand;
+impl engine::control::BrandStore for FakeBrand {
+    fn lend(&self, serve: &mut dyn FnMut(&engine::control::BrandAccess<'_>)) {
+        serve(&engine::control::BrandAccess::new(
+            &fake_brand_list,
+            &fake_brand_edit,
+            &fake_brand_copy,
+        ));
+    }
 }
 pub(crate) fn sticker_access() -> engine::control::StickerAccess<'static> {
     engine::control::StickerAccess::new(&fake_sticker_search, &fake_sticker_resolve)

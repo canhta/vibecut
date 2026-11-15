@@ -7,6 +7,7 @@ use ai::text::conversation::{
     AgentChatConsent, AgentChatLimits, ChatEvent, ChatModel, Conversation, DataKind, Reply,
     ToolInput, ToolResult,
 };
+use engine::control::BrandStore;
 use engine::jobs::JobRunner;
 use engine::{Fork, Session};
 
@@ -68,6 +69,9 @@ pub struct TurnRequest<'a> {
     pub runner: &'a mut JobRunner,
     pub limits: TurnLimits,
     pub cancel: CancelFlag,
+    /// The user's brand kit store the turn's `brand.*` commands use, lent once per command;
+    /// without it they refuse `unavailable`.
+    pub brand: Option<&'a dyn BrandStore>,
 }
 
 /// Everything one turn on an existing fork borrows.
@@ -81,6 +85,9 @@ pub struct ForkTurnRequest<'a> {
     pub runner: &'a mut JobRunner,
     pub limits: TurnLimits,
     pub cancel: CancelFlag,
+    /// The user's brand kit store the turn's `brand.*` commands use, lent once per command;
+    /// without it they refuse `unavailable`.
+    pub brand: Option<&'a dyn BrandStore>,
 }
 
 /// How a turn ended.
@@ -117,6 +124,7 @@ pub fn run_turn(
         runner,
         limits,
         cancel,
+        brand,
     } = request;
     limits.validate()?;
     let fork = session.fork()?;
@@ -128,6 +136,7 @@ pub fn run_turn(
             runner,
             limits,
             cancel,
+            brand,
         },
         events,
     )
@@ -148,11 +157,12 @@ pub fn run_turn_on_fork(
         runner,
         limits,
         cancel,
+        brand,
     } = request;
     limits.validate()?;
     let mark = conversation.history().len();
     let allowed = conversation.scope().kinds.clone();
-    let mut tools = Toolbox::new(fork, runner, cancel.clone(), allowed);
+    let mut tools = Toolbox::new(fork, runner, brand, cancel.clone(), allowed);
     let outcome = drive(&mut tools, conversation, prompt, limits, &cancel, events);
     tools.cancel_jobs();
     let end = match outcome {

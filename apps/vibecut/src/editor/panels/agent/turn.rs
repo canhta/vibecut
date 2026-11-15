@@ -74,13 +74,14 @@ const RUNNER: RunnerConfig = RunnerConfig {
     progress_interval: Duration::from_millis(50),
 };
 
-/// Start a turn on `fork` with `prompt`. `None` means the thread could not start and
-/// nothing was sent.
+/// Start a turn on `fork` with `prompt`, lending the user's brand kits to its `brand.*`
+/// commands. `None` means the thread could not start and nothing was sent.
 pub(super) fn spawn(
     fork: Fork,
     prompt: String,
     mut conversation: Conversation,
     budget: ByteBudget,
+    brand: Option<Arc<libraries::brand_kit::BrandKit>>,
     ctx: Option<egui::Context>,
 ) -> Option<Running> {
     let (sender, events) = wake::channel();
@@ -104,6 +105,9 @@ pub(super) fn spawn(
                             runner: &mut runner,
                             limits: TurnLimits::default(),
                             cancel: flag,
+                            brand: brand
+                                .as_deref()
+                                .map(|brand| brand as &dyn engine::control::BrandStore),
                         },
                         &mut |event| {
                             let _ = sender.send(Message::Event(event));

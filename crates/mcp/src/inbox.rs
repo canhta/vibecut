@@ -6,8 +6,8 @@ use engine::{
     ByteBudget, Session,
     control::Error as EngineError,
     control::{
-        self, Caller, ControlResult, MediaAccess, ResponseValue, StickerAccess, StickerEntry,
-        StickerPage, StickerQuery,
+        self, BrandStore, Caller, ControlResult, MediaAccess, ResponseValue, StickerAccess,
+        StickerEntry, StickerPage, StickerQuery,
     },
     jobs::{JobRunner, RunnerConfig, SystemClock},
     providers::TextAccess,
@@ -59,6 +59,9 @@ pub struct Inbox {
     /// The bundled sticker catalog behind `stickers.search` and `stickers.insert`. Without it
     /// those commands refuse `Unsupported`.
     stickers: Option<StickerLend>,
+    /// The user's brand kit store behind the `brand.*` commands, lent per command. Without it
+    /// those commands refuse `unavailable`.
+    brand: Option<Arc<dyn BrandStore + Send + Sync>>,
 }
 impl Inbox {
     /// Build an inbox with its own media cache; without a usable cache the
@@ -104,6 +107,7 @@ impl Inbox {
                 captions: None,
                 vision: None,
                 stickers: None,
+                brand: None,
             },
         ))
     }
@@ -133,6 +137,12 @@ impl Inbox {
     /// Lend the bundled sticker catalog behind `stickers.search` and `stickers.insert`.
     pub fn attach_stickers(&mut self, stickers: StickerLend) {
         self.stickers = Some(stickers);
+    }
+
+    /// Lend the user's brand kit store behind the `brand.*` commands. The composition root
+    /// also sets each session's media folder, where `brand.copy_media` writes.
+    pub fn attach_brand(&mut self, brand: Arc<dyn BrandStore + Send + Sync>) {
+        self.brand = Some(brand);
     }
 
     /// Process at most one request per tick; jobs continue when clients are idle.
@@ -262,6 +272,7 @@ impl Inbox {
             captions,
             vision,
             stickers,
+            brand,
             ..
         } = self;
         let runner = projects.get_mut(&id).ok_or(EngineError::Control(
@@ -276,6 +287,7 @@ impl Inbox {
             captions.as_deref(),
             vision.as_deref(),
             *stickers,
+            brand.as_deref(),
             session,
             value,
             publish,
@@ -296,6 +308,7 @@ impl Inbox {
             captions,
             vision,
             stickers,
+            brand,
             ..
         } = self;
         Self::execute_with(
@@ -306,6 +319,7 @@ impl Inbox {
             captions.as_deref(),
             vision.as_deref(),
             *stickers,
+            brand.as_deref(),
             session,
             value,
             publish,
@@ -323,6 +337,7 @@ impl Inbox {
         captions: Option<&engine::subtitles::CaptionAccess>,
         vision: Option<&engine::control::VisionAccess>,
         stickers: Option<StickerLend>,
+        brand: Option<&(dyn BrandStore + Send + Sync)>,
         session: &mut Session,
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::control::Result<()>,
@@ -340,7 +355,7 @@ impl Inbox {
             sounds: None,
             music: None,
             stickers: sticker_access.as_ref(),
-            brand: None,
+            brand: brand.map(|brand| brand as &dyn BrandStore),
             media,
             chapters,
             captions,

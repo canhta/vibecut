@@ -19,6 +19,7 @@ impl Session {
         session.item_clipboard = self.item_clipboard.clone();
         session.metadata = self.metadata.clone();
         session.protected = self.protected.clone();
+        session.media_dir = self.media_dir.clone();
         session.ripple = self.ripple;
         session.recorded = Some(Vec::new());
         Ok(Fork {

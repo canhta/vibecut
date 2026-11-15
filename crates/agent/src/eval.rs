@@ -204,6 +204,7 @@ pub fn evaluate(
                 runner: &mut runner,
                 limits: TurnLimits::default(),
                 cancel: CancelFlag::new(),
+                brand: None,
             },
             &mut |_| {},
         )?;

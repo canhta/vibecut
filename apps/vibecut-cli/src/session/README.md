@@ -6,7 +6,7 @@ Leased control lifetime, shared export admission, runtime settings.
 
 `registry::run` sends one command through `Session::control_typed` for the adapters that have no project file (fonts and the sound library), with the access objects in `Lent` and the typed refusal kept for the CLI's exit codes. `libraries::with_fonts` and `libraries::with_sounds` build those access objects from the per-user font store, the opened library root and `FREESOUND_API_KEY`; command parameters never carry a library root or token; human-granted font import carries only its chosen source path until the job consumes it.
 
-`libraries::with_brand` lends the user's brand kits (`BrandKit::native`) to one control request: it opens the store only for a `brand.*` request and drops it after, and a store that does not open lends an access refusing `unavailable`. The control session sets its media folder (`Session::set_media_dir`, `<project>.media`), the only place `brand.copy_media` writes.
+The control session and the headless MCP inbox lend the user's brand kits as `libraries::brand_kit::NativeBrandKit`, which opens the store for each `brand.*` command only and drops it after; a store that does not open refuses `unavailable`. Both set their session's media folder (`Session::set_media_dir`, `<project>.media`), the only place `brand.copy_media` writes. The one-shot `registry::run` adapter lends none: it only sends the font, sound, music, sticker and job commands its callers name.
 
 `libraries::prepare_project_libraries` loads only referenced custom text/caption families
 from the same verified font store before control rendering and export, and lends the sticker

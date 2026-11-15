@@ -1,4 +1,4 @@
-//! Discovers the per-user cache location.
+//! Discovers the per-user cache and config locations.
 use super::{Error as RuntimeError, Result};
 use std::path::PathBuf;
 
@@ -56,6 +56,21 @@ impl CacheRoot {
     pub fn thumbnails(&self) -> PathBuf {
         self.models().join("thumbnails")
     }
+}
+
+/// The per-user VibeCut config folder, `<HOME, else APPDATA>/.config/vibecut`: the desktop's
+/// preferences and the user's brand kits live there. Discovered without filesystem IO.
+///
+/// # Errors
+/// Returns [`crate::EditError::Unsupported`] composed through [`RuntimeError::Edit`] when
+/// neither variable is set.
+pub fn user_config_dir() -> Result<PathBuf> {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("APPDATA"))
+        .ok_or(RuntimeError::Edit(crate::EditError::Unsupported(
+            "user config location unavailable",
+        )))?;
+    Ok(PathBuf::from(home).join(".config/vibecut"))
 }
 
 impl std::fmt::Debug for CacheRoot {

@@ -58,15 +58,28 @@ fn sticker_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::
             "sticker catalog unavailable",
         ))
 }
-fn brand_access<'a>(
-    caller: &Caller<'a>,
-) -> std::result::Result<&'a super::BrandAccess<'a>, crate::BrandKitError> {
-    caller.brand.ok_or(crate::BrandKitError::Unavailable)
+/// Run one `brand.*` command on the caller's store, lent for this command only. A caller
+/// without a store, or a store that never serves, refuses `Unavailable`.
+fn with_brand<T>(
+    caller: &Caller<'_>,
+    run: impl FnOnce(&super::BrandAccess<'_>) -> Result<T>,
+) -> Result<T> {
+    let store = caller.brand.ok_or(crate::BrandKitError::Unavailable)?;
+    let mut run = Some(run);
+    let mut out = None;
+    store.lend(&mut |access: &super::BrandAccess<'_>| {
+        if let Some(run) = run.take() {
+            out = Some(run(access));
+        }
+    });
+    out.unwrap_or_else(|| Err(crate::BrandKitError::Unavailable.into()))
 }
 /// Run one brand kit edit on the lent store and answer with the active kit after it.
 fn brand_edit(caller: &Caller<'_>, edit: super::BrandEdit) -> Result<ControlResult> {
-    Ok(ControlResult::BrandKit {
-        kit: (brand_access(caller)?.edit)(edit)?,
+    with_brand(caller, |access| {
+        Ok(ControlResult::BrandKit {
+            kit: (access.edit)(edit)?,
+        })
     })
 }
 fn music_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::MusicAccess<'a>> {
@@ -186,8 +199,10 @@ impl Session {
             Command::FontsLoad { family } => Ok(ControlResult::Font {
                 font: (font_access(caller)?.load)(family.as_str())?,
             }),
-            Command::BrandList {} => Ok(ControlResult::BrandKit {
-                kit: (brand_access(caller)?.list)()?,
+            Command::BrandList {} => with_brand(caller, |access| {
+                Ok(ControlResult::BrandKit {
+                    kit: (access.list)()?,
+                })
             }),
             Command::BrandAddFont { family, kit_name } => brand_edit(
                 caller,
@@ -229,10 +244,11 @@ impl Session {
             // The copy lands in the folder the composition root gave this session, never in
             // one the caller names; a session without one refuses before touching the kit.
             Command::BrandCopyMedia { media } => {
-                let access = brand_access(caller)?;
                 let dir = self.media_dir().ok_or(crate::BrandKitError::Unavailable)?;
-                Ok(ControlResult::BrandMediaCopied {
-                    path: (access.copy)(media, dir)?,
+                with_brand(caller, |access| {
+                    Ok(ControlResult::BrandMediaCopied {
+                        path: (access.copy)(media, dir)?,
+                    })
                 })
             }
             Command::TranscriptSearch { query, limit } => {

@@ -45,13 +45,13 @@ impl BrandKit {
         })
     }
 
-    /// Opens the user's store where the desktop app keeps it, beside its preferences:
-    /// `<HOME, else APPDATA>/.config/vibecut/brand_kits`. A host with neither is `Unavailable`.
+    /// Opens the user's store in the user config folder (`engine::user_config_dir`), beside the
+    /// desktop's preferences: `<config>/brand_kits`. A host without that folder is
+    /// `Unavailable`.
     pub fn native() -> Result<Self> {
-        let home = std::env::var_os("HOME")
-            .or_else(|| std::env::var_os("APPDATA"))
-            .ok_or(BrandKitError::Unavailable)?;
-        Self::open(&PathBuf::from(home).join(".config/vibecut/brand_kits"))
+        let config = engine::user_config_dir()
+            .map_err(|_| BrandKitError::Unavailable)?;
+        Self::open(&config.join("brand_kits"))
     }
 
     pub fn kits(&self) -> Result<Vec<KitSummary>> {

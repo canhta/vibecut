@@ -1,10 +1,7 @@
-//! Lends the process font, sound, music and brand kit stores to registry requests.
+//! Lends the process font, sound and music stores to registry requests.
 use crate::args::CliError;
-use engine::control::{
-    BrandAccess, BrandEdit, BrandKitView, FontAccess, MusicAccess, SoundAccess, StickerAccess,
-};
+use engine::control::{FontAccess, MusicAccess, SoundAccess, StickerAccess};
 use engine::jobs::JobRunner;
-use libraries::brand_kit::BrandKit;
 use libraries::fonts::FontStore;
 use libraries::music::{MusicClient, MusicLibrary, MusicToken};
 use libraries::sounds::{
@@ -81,26 +78,6 @@ pub(crate) fn sticker_lend() -> mcp::StickerLend {
 /// exists.
 pub(crate) fn with_stickers<T>(serve: impl FnOnce(&StickerAccess<'_>) -> T) -> T {
     serve(&StickerAccess::new(&sticker_search, &sticker_resolve))
-}
-
-/// Lend the user's brand kits (`BrandKit::native`, the store the desktop app keeps) to one
-/// request. `open` is false for a request that is no `brand.*` command, so other requests
-/// never take the store's writer lease. A store that is not opened or does not open (no user
-/// folder, or the desktop app holds its lease) lends an access that refuses `unavailable`.
-pub(crate) fn with_brand<T>(open: bool, serve: impl FnOnce(&BrandAccess<'_>) -> T) -> T {
-    if open && let Ok(store) = BrandKit::native() {
-        return store.with_control(serve);
-    }
-    let list = || -> engine::control::Result<Option<BrandKitView>> {
-        Err(engine::BrandKitError::Unavailable.into())
-    };
-    let edit = |_: BrandEdit| -> engine::control::Result<Option<BrandKitView>> {
-        Err(engine::BrandKitError::Unavailable.into())
-    };
-    let copy = |_: u64, _: &Path| -> engine::control::Result<std::path::PathBuf> {
-        Err(engine::BrandKitError::Unavailable.into())
-    };
-    serve(&BrandAccess::new(&list, &edit, &copy))
 }
 
 /// Open one sound-library root and serve its three operations. Only search reads

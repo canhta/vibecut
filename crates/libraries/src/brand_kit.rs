@@ -5,6 +5,7 @@ mod files;
 mod record;
 mod store;
 
+pub use control::NativeBrandKit;
 pub use record::{MAX_ENTRIES, MAX_FILE_BYTES, MAX_KITS, MAX_NAME_BYTES};
 pub use store::{BrandKit, KitSummary};
 

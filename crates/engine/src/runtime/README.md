@@ -27,6 +27,14 @@ The named paths preserve the existing layout: `models()` is `<base>/VibeCut/mode
 caller-injected `ArtifactCache` or `MediaAccess::open_in` roots. Cache consumers retain
 their existing storage, budget and cleanup policy.
 
+## User config location
+
+`user_config_dir()` is the one owner of the per-user config folder,
+`<HOME, else APPDATA>/.config/vibecut`, without filesystem IO; neither variable set returns
+`engine::EditError::Unsupported` through `RuntimeError::Edit`. The desktop keeps its
+preferences there and `libraries::brand_kit::BrandKit::native` the user's brand kits; tests
+pass explicit roots instead.
+
 ## Host-sized default budget
 
 `ByteBudget::for_host(&dyn MemoryProbe)` is the one default every adapter opens with: the

@@ -91,26 +91,24 @@ fn run(
         command: command.into(),
         params,
     };
-    let result = store.with_control(|access| {
-        session.control_typed(
-            request,
-            Caller {
-                principal: "vibecut-desktop",
-                external: false,
-                policy: &Trusted,
-                fonts: None,
-                sounds: None,
-                music: None,
-                stickers: None,
-                brand: Some(access),
-                media: None,
-                chapters: None,
-                captions: None,
-                vision: None,
-            },
-            &mut runner,
-        )
-    });
+    let result = session.control_typed(
+        request,
+        Caller {
+            principal: "vibecut-desktop",
+            external: false,
+            policy: &Trusted,
+            fonts: None,
+            sounds: None,
+            music: None,
+            stickers: None,
+            brand: Some(store),
+            media: None,
+            chapters: None,
+            captions: None,
+            vision: None,
+        },
+        &mut runner,
+    );
     runner.shutdown();
     result
 }

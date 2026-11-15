@@ -5,13 +5,14 @@ use super::store::BrandKit;
 use engine::BrandKitError;
 use engine::control::{
     BrandAccess, BrandColorView, BrandEdit, BrandEntryState, BrandKitView, BrandMediaView,
+    BrandStore,
 };
 use std::path::{Path, PathBuf};
 
-impl BrandKit {
-    /// Lend this store to `serve` as the access object the `brand.*` commands use. Every edit
-    /// answers with the active kit after it, so a caller never needs a second listing.
-    pub fn with_control<T>(&self, serve: impl FnOnce(&BrandAccess<'_>) -> T) -> T {
+/// An open store lends itself: the desktop keeps its one store open for the process. Every
+/// edit answers with the active kit after it, so a caller never needs a second listing.
+impl BrandStore for BrandKit {
+    fn lend(&self, serve: &mut dyn FnMut(&BrandAccess<'_>)) {
         let list = || -> engine::control::Result<Option<BrandKitView>> { Ok(self.active_view()?) };
         let edit = |edit: BrandEdit| -> engine::control::Result<Option<BrandKitView>> {
             self.apply(edit)?;
@@ -20,10 +21,27 @@ impl BrandKit {
         let copy = |media: u64, dir: &Path| -> engine::control::Result<PathBuf> {
             Ok(self.copy_active_media(media, dir)?)
         };
-        let access = BrandAccess::new(&list, &edit, &copy);
-        serve(&access)
+        serve(&BrandAccess::new(&list, &edit, &copy));
     }
+}
 
+/// The user's store (`BrandKit::native`) opened for each `brand.*` command and released after
+/// it, so a process that lends it never holds the store's writer lease between commands. While
+/// another process (the desktop app) holds it, the commands refuse `Unavailable`. The CLI
+/// control session, the headless MCP inbox and the CLI agent lend this.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NativeBrandKit;
+
+impl BrandStore for NativeBrandKit {
+    fn lend(&self, serve: &mut dyn FnMut(&BrandAccess<'_>)) {
+        match BrandKit::native() {
+            Ok(store) => store.lend(serve),
+            Err(_) => serve(&BrandAccess::unavailable()),
+        }
+    }
+}
+
+impl BrandKit {
     /// The active kit as `brand.list` reports it, or `None` when no kit is active.
     pub fn active_view(&self) -> Result<Option<BrandKitView>> {
         let Some(active) = self.active()? else {

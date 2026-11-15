@@ -87,10 +87,12 @@ impl Editor {
         i18n::text(self.preferences.locale, key)
     }
     /// Lend the user's brand kits: the Media tab's Brand assets page lists the active kit's
-    /// files and the font list puts its families first. The composition root lends the one
+    /// files, the font list puts its families first and the agent's `brand.*` commands use
+    /// it. The composition root lends the one
     /// process store; tests and audits lend a temporary one.
     pub fn set_brand_kit(&mut self, kit: Arc<libraries::brand_kit::BrandKit>) {
         self.assets.set_brand_kit(kit.clone());
+        self.agent.set_brand_kit(kit.clone());
         self.properties.set_brand_kit(kit);
     }
     /// Inject the catalog command adapter. Production opens it lazily; tests

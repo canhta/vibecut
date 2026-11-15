@@ -120,6 +120,8 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         History::Single,
         WritePolicy::Changed,
         |session| {
+            // The agent's `brand.copy_media` writes only into the project's media folder.
+            session.set_media_dir(project::media_dir(Some(project_path.as_path())))?;
             let turn = run_turn(
                 TurnRequest {
                     session: &*session,
@@ -128,6 +130,8 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
                     runner: &mut runner,
                     limits: TurnLimits { max_steps },
                     cancel: CancelFlag::new(),
+                    // Opened for each `brand.*` command only.
+                    brand: Some(&libraries::brand_kit::NativeBrandKit),
                 },
                 &mut |event: AgentEvent| print_line(&event),
             )

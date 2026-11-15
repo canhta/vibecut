@@ -52,7 +52,12 @@ Failures are `engine::BrandKitError`: `NotFound`, `Limit`, `Invalid(what)`, `Int
 
 ## Control
 
-`open(root)` opens a store under any root; `native()` opens the user's, `<HOME, else APPDATA>/.config/vibecut/brand_kits`, the folder the desktop app keeps beside its preferences. `with_control` lends the store as `engine::control::BrandAccess` for one request; the desktop's `services::assets::brand::run_brand` and the CLI control session send the registry commands through it. Commands act on the active kit and every edit answers with the kit after it:
+`open(root)` opens a store under any root; `native()` opens the user's, `brand_kits` in `engine::user_config_dir()`, beside the desktop's preferences. Both lenders implement `engine::control::BrandStore`, which dispatch asks once per `brand.*` command:
+
+- `BrandKit` lends itself. The desktop keeps its one store open for the process and lends it to its own requests (`services::assets::brand::run_brand`), the agent chat and its MCP inbox.
+- `NativeBrandKit` opens `native()` for that command and drops it after, so it never holds the writer lease between commands; while the desktop app holds it the commands refuse `Unavailable`. The CLI control session, the headless MCP inbox and `vibecut-cli agent` lend it.
+
+Commands act on the active kit and every edit answers with the kit after it:
 
 | Command | Store operation | Agent grant |
 |---|---|---|

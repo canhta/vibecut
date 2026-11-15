@@ -159,4 +159,5 @@ pub use rendering::{
 };
 
 pub(crate) use staged_publication::snapshot_project_name;
+pub use cache_location::user_config_dir;
 pub use staged_publication::{default_file_name, sanitize_file_name};

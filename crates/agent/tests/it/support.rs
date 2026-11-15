@@ -170,6 +170,7 @@ pub(crate) fn drive(
             runner,
             limits,
             cancel: cancel.clone(),
+            brand: None,
         },
         &mut |event| {
             watch(&event);

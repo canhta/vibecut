@@ -131,6 +131,10 @@ impl eframe::App for Native {
             ) {
                 Ok(mut server) => {
                     server.inbox.attach_stickers(vibecut::app::sticker_lend());
+                    // The process's one open store; Home and the editors share it.
+                    if let Some(brand) = self.workspace.brand_kit() {
+                        server.inbox.attach_brand(brand);
+                    }
                     self.control = Some(server);
                 }
                 Err(_) => tracing::warn!(
@@ -418,10 +422,9 @@ fn run() -> Result<()> {
             return Err(Error::Invalid("one project path expected"));
         }
     }
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("APPDATA"))
-        .ok_or(Error::Unsupported("preference directory"))?;
-    let store = PreferenceStore::new(PathBuf::from(home).join(".config/vibecut/preferences.json"));
+    let config = engine::user_config_dir()
+        .map_err(|_| Error::Unsupported("preference directory"))?;
+    let store = PreferenceStore::new(config.join("preferences.json"));
     let (preferences, warning) = store.load_with_warning();
     if let Some(issue) = warning {
         tracing::warn!(category = "preference_load_failed", %issue, "Preferences restored defaults");

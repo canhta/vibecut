@@ -256,6 +256,30 @@ impl<'a> BrandAccess<'a> {
         Self { list, edit, copy }
     }
 }
+impl BrandAccess<'static> {
+    /// The access a store that did not open lends: every `brand.*` command refuses
+    /// [`crate::BrandKitError::Unavailable`].
+    pub fn unavailable() -> Self {
+        Self::new(&unavailable_list, &unavailable_edit, &unavailable_copy)
+    }
+}
+fn unavailable_list() -> Result<Option<BrandKitView>> {
+    Err(crate::BrandKitError::Unavailable.into())
+}
+fn unavailable_edit(_: BrandEdit) -> Result<Option<BrandKitView>> {
+    Err(crate::BrandKitError::Unavailable.into())
+}
+fn unavailable_copy(_: u64, _: &std::path::Path) -> Result<std::path::PathBuf> {
+    Err(crate::BrandKitError::Unavailable.into())
+}
+/// A brand kit store a composition root lends to control callers. Dispatch calls `lend` once
+/// per `brand.*` command, so a store may be opened for that command and released after it;
+/// other commands never touch it.
+pub trait BrandStore {
+    /// Serve one command with this store's operations. An implementation calls `serve` exactly
+    /// once, with [`BrandAccess::unavailable`] when its store cannot open.
+    fn lend(&self, serve: &mut dyn FnMut(&BrandAccess<'_>));
+}
 /// The three sound-library operations the process lends to control commands. The
 /// access object owns the library root and the provider credential, so the command
 /// carries neither; it chooses remote or local search by the credential's presence.
@@ -405,9 +429,9 @@ pub struct Caller<'a> {
     /// The process sticker catalog behind `stickers.search` and `stickers.insert`. Without it
     /// those commands refuse `Unsupported`.
     pub stickers: Option<&'a StickerAccess<'a>>,
-    /// The process brand kit store behind the `brand.*` commands. Without it they refuse
-    /// [`crate::BrandKitError::Unavailable`].
-    pub brand: Option<&'a BrandAccess<'a>>,
+    /// The user's brand kit store behind the `brand.*` commands, lent once per such command.
+    /// Without it they refuse [`crate::BrandKitError::Unavailable`].
+    pub brand: Option<&'a dyn BrandStore>,
     /// The process artifact caches behind `media.generate_waveform` and
     /// `media.generate_clip_thumbnails`. Without them those commands refuse.
     /// One mutex instance is shared by the desktop timeline display and the
