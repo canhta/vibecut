@@ -1166,3 +1166,72 @@ fn ephemeral_assets_are_hidden_and_cannot_enter_library_selection() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].source_asset, Some(AssetId(1)));
 }
+
+/// Fails if a Brand assets row imports the kit's own stored file instead of a project copy, or
+/// if the copy is not inserted on the timeline.
+#[test]
+fn brand_asset_click_inserts_a_project_copy_of_the_kit_file() {
+    let woken = crate::woken::Woken::bind();
+    let kits = tempfile::tempdir().unwrap();
+    let sources = tempfile::tempdir().unwrap();
+    let source = sources.path().join("brand-intro.mp4");
+    std::fs::write(&source, b"brand intro").unwrap();
+    let store = libraries::brand_kit::BrandKit::open(kits.path()).unwrap();
+    let kit = store.create("Brand").unwrap();
+    store.set_active(Some(kit)).unwrap();
+    let media = store
+        .add_media(
+            kit,
+            engine::control::BrandMediaSection::Video,
+            &source,
+            "brand-intro.mp4",
+        )
+        .unwrap();
+    let mut editor = editor();
+    editor.set_import_probe(Arc::new(Probe::default())).unwrap();
+    editor.set_brand_kit(Arc::new(store));
+    let mut harness = crate::gpu::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+    woken.attach(&harness.ctx);
+    harness.run_steps(2);
+    widget(&harness, "assets.subnav.brand_assets").click();
+    harness.run_steps(1);
+    let row = format!("media.brand.{media}");
+    woken.step_until(&mut harness, "the brand kit listing", |editor| {
+        editor
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|widget| widget.id == row)
+    });
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some(row.as_str())))
+        .click();
+    woken.step_until(&mut harness, "the copied file's insert", |editor| {
+        !editor.importing()
+            && !editor
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .main
+                .items
+                .is_empty()
+    });
+    let data = harness.state().session.project().data().clone();
+    let asset = data.scene().timeline.main.items[0]
+        .source_asset
+        .and_then(|id| data.assets.iter().find(|asset| asset.id() == id))
+        .unwrap()
+        .clone();
+    assert!(
+        !asset.path().starts_with(kits.path()),
+        "the project names its own copy, never the kit's file: {:?}",
+        asset.path()
+    );
+    assert_eq!(std::fs::read(asset.path()).unwrap(), b"brand intro");
+    std::fs::remove_file(asset.path()).unwrap();
+}

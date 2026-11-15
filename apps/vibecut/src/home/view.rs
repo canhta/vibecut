@@ -1,9 +1,10 @@
-//! Draws the Home window: rail, top band, create banner, tool card and project rows.
+//! Draws the Home window: rail, top band, then the projects page or the brand kit page.
 //!
 //! Geometry is the measured desktop reference at the 1728×1030 window, in
 //! logical px from the window's top-left; the rail starts at x 0, the page
 //! 240 px in, and the banner sits 44 px down.
 
+mod brand_kit;
 mod chrome;
 mod create;
 mod dialogs;
@@ -20,6 +21,8 @@ pub(super) const RAIL: f32 = 240.0;
 /// Rail rows sit 20 px in and are 176×32.
 const RAIL_INSET: f32 = 20.0;
 const RAIL_ROW: [f32; 2] = [176.0, 32.0];
+/// Rail rows repeat on a 44 px pitch.
+const RAIL_PITCH: f32 = 44.0;
 const RAIL_RULE_GAP: f32 = 20.0;
 const ROW_RADIUS: f32 = 6.0;
 /// Top band height; the banner starts below it and rail rows start level with it.
@@ -70,6 +73,10 @@ pub(super) fn show(
             let width = (body.width() - PAGE_RIGHT).max(240.0);
             ui.set_max_width(width);
             ui.spacing_mut().item_spacing.y = 0.0;
+            if state.brand_open {
+                brand_kit::page(ui, width, state, locale);
+                return;
+            }
             create::banner(ui, width, state, locale);
             ui.add_space(BLOCK_GAP);
             ui.horizontal_top(|ui| {
@@ -82,5 +89,8 @@ pub(super) fn show(
             projects::section(ui, state, look, projects);
         });
     dialogs::show(state, ui.ctx(), look);
+    if state.brand_open {
+        brand_kit::dialogs(state, ui.ctx(), locale);
+    }
     welcome::show(state, ui.ctx(), look, welcome_seen);
 }

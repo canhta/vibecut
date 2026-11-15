@@ -2,9 +2,10 @@
 //!
 //! The window interface is [`State`], [`Context`], [`Action`] and [`show`]:
 //! `show` draws the whole window and returns the [`Action`]s the composition
-//! root must carry out. Home imports only the kit, the catalog and the
-//! engine's project library.
+//! root must carry out. Home imports only the kit, the catalog, the
+//! engine's project library and the lent brand kit store.
 
+mod brand_kit;
 mod preferences;
 mod state;
 mod view;
@@ -27,11 +28,15 @@ pub struct Context<'a> {
     pub default_fps: u32,
     /// The first-launch welcome was finished; Home sets it.
     pub welcome_seen: &'a mut bool,
+    /// The user's brand kits, or `None` when the store did not open.
+    pub brand: Option<std::sync::Arc<libraries::brand_kit::BrandKit>>,
 }
 
 /// Draw the window and return the lifecycle actions a click requested.
 pub fn show(state: &mut State, cx: Context<'_>, ui: &mut egui::Ui) -> Vec<Action> {
     state.default_fps = cx.default_fps;
+    state.locale = cx.look.locale;
+    state.brand.attach(cx.brand.as_ref());
     view::show(state, ui, cx.look, cx.projects, cx.status, cx.welcome_seen);
     state.action.take().into_iter().collect()
 }

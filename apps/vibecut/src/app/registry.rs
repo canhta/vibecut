@@ -36,6 +36,8 @@ pub struct Workspace {
     pub(super) shorts_window: bool,
     /// The native dialog the shorts window asked for, polled by `tick` until it answers.
     pub(super) shorts_picker: Option<super::picker::Picker>,
+    /// The native dialog Home's brand kit page asked for, polled by `tick` until it answers.
+    pub(super) brand_picker: Option<super::picker::Picker>,
     /// The one place stores and the model service are lent from.
     pub(super) lending: Lending,
     /// Project files seen this session (catalog rows and open windows), so
@@ -109,6 +111,7 @@ impl Workspace {
             home_focused: false,
             shorts_window: false,
             shorts_picker: None,
+            brand_picker: None,
             lending,
             lane_paths: BTreeMap::new(),
             lane_prune_key: Vec::new(),
@@ -138,8 +141,8 @@ impl Workspace {
     pub fn media(&self) -> Option<Arc<Mutex<engine::control::MediaAccess>>> {
         self.lending.media()
     }
-    /// The user's brand kits, opened once for the process. No editor or control
-    /// request reads them yet; the lender exists so the first consumer borrows it.
+    /// The user's brand kits, opened once for the process: Home's brand kit page edits them and
+    /// each editor's Brand assets page and font list read them.
     pub fn brand_kit(&self) -> Option<Arc<libraries::brand_kit::BrandKit>> {
         self.lending.brand()
     }
@@ -364,6 +367,7 @@ impl Workspace {
             shorts.tick();
         }
         self.poll_shorts_picker();
+        self.poll_brand_picker();
         self.home.runner.borrow_mut().drain_events();
         if let Some(error) = self.lending.tick_models() {
             self.home.error.get_or_insert(error);
@@ -488,6 +492,8 @@ impl Workspace {
                 Ok(())
             }
             HomeAction::Shorts => self.open_shorts(),
+            // The viewport that drew Home opens this picker itself; it needs the frame's context.
+            HomeAction::PickBrandMedia(_) => Ok(()),
         };
         if let Err(error) = result {
             self.home.error = Some(error);

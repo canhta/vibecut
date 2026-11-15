@@ -83,6 +83,8 @@ pub struct State {
     pub preview_fonts: BTreeSet<String>,
     /// Families installed this pass; they become usable on the next pass.
     pub preview_pending: BTreeSet<String>,
+    /// The active brand kit's families in kit order, read when the picker opens.
+    pub kit: Vec<String>,
 }
 impl State {
     pub fn open(&mut self, anchor: egui::Pos2, current: Option<String>) {
@@ -104,18 +106,28 @@ impl State {
         self.open = false;
     }
     /// The families the chip and search show: the Presets section (every origin but the
-    /// operating system, catalogue order) and the System font section. Favourites come first
-    /// within a section.
+    /// operating system, catalogue order) and the System font section. The brand kit's
+    /// families lead the Presets section in kit order, whatever their origin; favourites then
+    /// come first within a section.
     pub fn sections(
         &self,
         preferences: &FontPickerPreferences,
     ) -> (Vec<&FontEntry>, Vec<&FontEntry>) {
         let query = self.query.trim().to_lowercase();
-        let (mut presets, mut system): (Vec<&FontEntry>, Vec<&FontEntry>) = self
+        let kit_rank = |entry: &FontEntry| {
+            self.kit
+                .iter()
+                .position(|family| family.eq_ignore_ascii_case(&entry.family))
+        };
+        let (mut kit, rest): (Vec<&FontEntry>, Vec<&FontEntry>) = self
             .entries
             .iter()
             .filter(|entry| self.filter.admits(entry))
             .filter(|entry| query.is_empty() || entry.family.to_lowercase().contains(&query))
+            .partition(|entry| kit_rank(*entry).is_some());
+        kit.sort_by_key(|entry| kit_rank(*entry));
+        let (mut presets, mut system): (Vec<&FontEntry>, Vec<&FontEntry>) = rest
+            .into_iter()
             .partition(|entry| entry.origin != engine::control::FontOrigin::System);
         for section in [&mut presets, &mut system] {
             section.sort_by_key(|entry| {
@@ -125,7 +137,8 @@ impl State {
                     .any(|family| family == &entry.family)
             });
         }
-        (presets, system)
+        kit.extend(presets);
+        (kit, system)
     }
     /// Every shown family in section order, collapsed or not.
     pub fn visible(&self, preferences: &FontPickerPreferences) -> Vec<&FontEntry> {
@@ -231,6 +244,15 @@ mod tests {
             ["Lobster", "Inter"],
             "a favourite sorts first"
         );
+        let mut kit = state.clone();
+        kit.kit = vec!["Arial".into(), "Inter".into()];
+        let (presets, system) = kit.sections(&preferences);
+        assert_eq!(
+            names(&presets),
+            ["Arial", "Inter", "Lobster"],
+            "brand kit families lead the list in kit order, ahead of favourites"
+        );
+        assert!(system.is_empty(), "a kit system family leaves its section");
     }
 
     #[test]

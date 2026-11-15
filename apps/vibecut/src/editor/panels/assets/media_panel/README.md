@@ -1,7 +1,7 @@
 # Media library
 
 Interface: `MediaView`, `MediaSort`, `MediaSortKey`, `MediaSortOrder`, `MediaKind`, `display_name`,
-`next_sort`, `ordered_assets`, `file_size`.
+`next_sort`, `ordered_assets`, `file_size`, and the Brand assets owner `brand::BrandAssets`.
 
 The Media tab is the live asset library. Grid and list share one persisted mode. The
 sort dropdown orders by name, type, duration or file size, flips direction on the active
@@ -56,3 +56,11 @@ Thumbnail retention and its leases belong to
 [engine artifacts](../../../../../../../crates/engine/src/artifacts/README.md).
 
 A non-generated asset whose source file is gone draws its tile with the missing body fill and one centred `Media missing` line in place of a thumbnail (`AssetRow::missing`, read from `VisualQuery::availability` while the rows are projected); the rest of the tile is unchanged. Measurements: [Missing media](../../../../../../../docs/product/ui/editor.md#missing-media).
+
+`brand` owns the Brand assets page's work on the lent brand kit store: the listing (which
+hashes every kit file, so it runs on a thread the frame polls) and the copy a row click asks
+for. The copy goes into the project's media folder under the entry's name, made unique and
+safe for every filesystem, and is verified against the kit's hash; it then enters the paste
+import, which inserts it at the playhead the click saw. The project names its own copy and
+never the kit's stored file, so later kit edits leave it unchanged. A missing or damaged kit
+file, a copy already running or an import in progress refuses with a toast.

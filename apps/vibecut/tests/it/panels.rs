@@ -3297,6 +3297,14 @@ fn text_presets_and_animations_click_edit_undo_reopen_and_capture_both_locales()
         // Save the current look, change it, then apply the saved copy back.
         let history = h.state().session.history_len().0;
         click(&mut h, "inspector.text_preset.save");
+        assert_eq!(
+            h.state().session.history_len().0,
+            history,
+            "Save style first shows the reference's notice"
+        );
+        assert!(has_widget(&h, "inspector.text_preset.notice.ok"));
+        click(&mut h, "inspector.text_preset.notice.ok");
+        assert!(!has_widget(&h, "inspector.text_preset.notice.ok"));
         assert_eq!(h.state().session.history_len().0, history + 1);
         let bank = h.state().session.project().data().text_presets.clone();
         assert_eq!(bank.len(), 1);
@@ -5464,6 +5472,21 @@ fn font_picker_lists_search_chips_sections_and_favorites_through_commands() {
     harness.run_steps(2);
     assert!(!font_picker(&harness).open);
     assert_eq!(harness.state().session.history_len().0, history);
+
+    // The active brand kit's families lead the list each time it opens, ahead of a favourite
+    // and out of the System font section.
+    let kits = tempfile::tempdir().unwrap();
+    let store = libraries::brand_kit::BrandKit::open(kits.path()).unwrap();
+    let kit = store.create("Brand").unwrap();
+    store.add_font(kit, "Arial").unwrap();
+    store.set_active(Some(kit)).unwrap();
+    harness.state_mut().set_brand_kit(Arc::new(store));
+    open_font_picker(&mut harness);
+    assert!(
+        widget_rect(&harness, "inspector.text_font.Arial").top()
+            < widget_rect(&harness, "inspector.text_font.Noto Serif").top(),
+        "a brand kit family leads the font list"
+    );
 }
 
 #[test]

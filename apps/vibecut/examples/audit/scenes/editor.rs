@@ -7,7 +7,7 @@ use super::super::fixture::{
     wait_for_presented,
 };
 use crate::subtitles_fixture;
-use egui_kittest::kittest::{By, Queryable};
+use egui_kittest::kittest::{By, NodeT, Queryable};
 use engine::ByteBudget;
 use engine::Command;
 use media::AssetData;
@@ -430,6 +430,50 @@ pub(super) fn editor_media_favorites(theme: Theme, scale: f32) -> Result<AppHarn
     app.get(By::new().predicate(|node| node.author_id() == Some("assets.subnav.favorites")))
         .click();
     app.run_steps(3);
+    Ok(app)
+}
+/// The Brand assets page of the Media sub-navigation with no kit yet (reference 111016).
+pub(super) fn editor_media_brand_assets(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    editor_media_brand_assets_with(theme, scale, false)
+}
+/// The Brand assets page listing a kit with one file in each file section.
+pub(super) fn editor_media_brand_assets_filled(
+    theme: Theme,
+    scale: f32,
+) -> Result<AppHarness, Failure> {
+    editor_media_brand_assets_with(theme, scale, true)
+}
+fn editor_media_brand_assets_with(
+    theme: Theme,
+    scale: f32,
+    filled: bool,
+) -> Result<AppHarness, Failure> {
+    let kits = tempfile::tempdir()?;
+    if filled {
+        super::home::fill_brand_kit(kits.path())?;
+    }
+    let (mut editor, _) = media_editor(theme, Locale::En)?;
+    editor.set_brand_kit(Arc::new(libraries::brand_kit::BrandKit::open(kits.path())?));
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1727.0, 1029.0]);
+    app.state_mut()._brand_kit = Some(kits);
+    wait_for_presented(&mut app)?;
+    app.get(By::new().predicate(|node| node.author_id() == Some("assets.subnav.brand_assets")))
+        .click();
+    // The listing reads the kit on a thread; the refresh icon is enabled once it lands.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let done = |app: &AppHarness| {
+        app.query(By::new().predicate(|node| node.author_id() == Some("media.brand.refresh")))
+            .is_some_and(|node| !node.accesskit_node().is_disabled())
+    };
+    app.run_steps(2);
+    while !done(&app) {
+        app.run_steps(1);
+        if Instant::now() >= deadline {
+            return Err("brand assets audit timed out".into());
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    app.run_steps(2);
     Ok(app)
 }
 /// The Transitions tab with an applicable cut selected, at the measured editor size.

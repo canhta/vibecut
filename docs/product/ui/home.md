@@ -18,6 +18,15 @@ Shot 221432, window origin (56,38), 1728×1030; logical px from the window's top
 - Card surface `#111D20` and window `#071417` are samples only; colours stay ours.
 - Columns fill the available width using these rail and thumbnail values; Library asset-card geometry remains unmeasured.
 
+## Brand kit page
+
+Capture 2026-11-14b frame 111111, a 1600 x 1142 pt region right of the rail (logical = native / 2), measured from the page's left edge. The rail's Brand kit row (after Shorts, on the 44 px pitch) opens it in place of the projects page; the reference reaches it as Home sidebar > Spaces > a space > the Brand kit tab.
+
+- Intro banner 712 x 100 (radius 8): title `Get started with brand kit` 12 px semibold, cap top 16 px down and 24 px in; list lines 11 px on an 18 px pitch, the first cap top 39 px down, each led by a sparkle mark centred 26 px in, text 36 px in; the close glyph centred 16 px from the right and top edges. The reference's third line (`Try brand kit features in the free-trial period`) and its illustration advertise a paid trial and are not built; the fill is `kit::panel`, ours (the capture's purple is not a token).
+- Sections in order Videos, Images, Stickers, Fonts, Backgrounds, Music: an 11 px label with its collapse caret, cap top 13.5 px under the block above; 120 x 80 tiles (radius 8) whose top sits 30.5 px under the label's cap top; the next label's cap top 35.5 px under the tiles (146 px section pitch). The add tile centres the section glyph (18.5 px measured, drawn at 20) with a plus beside it. The capture shows only empty sections, so a filled tile (glyph, name, a damaged or missing file's state, a menu with Rename and Remove) and the 12 px gap between tiles are ours, unmeasured.
+- The reference's header card (space name, storage, Upgrade, members, cloud) and its `Space` tab belong to its online spaces and are not built; our page title `Brand kit` sits in a 24 px row with the banner 13 px below it, ours.
+- A file section's add tile opens the native file picker for its kind, as the reference's Videos tile does (frame 111120); Fonts' add tile opens a family chooser, ours (the capture does not open it).
+
 ## Gaps
 
 - Dialogs (rename, info, delete) and hover/pressed states are not captured.

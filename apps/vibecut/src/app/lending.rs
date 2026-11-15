@@ -29,7 +29,7 @@ pub(super) struct Lending {
     /// One process media cache instance, lent to every editor's timeline and to
     /// the desktop MCP inbox. A second open of the same root is never attempted.
     media: Option<Arc<Mutex<MediaAccess>>>,
-    /// The user's brand kits. No editor or control consumer reads it yet.
+    /// The user's brand kits: Home edits them, every editor reads them.
     brand: Option<Arc<BrandKit>>,
     /// The installed local face detector behind the shorts review's shot layouts. It reads the
     /// shared verified model cache on each load and never downloads.
@@ -102,6 +102,9 @@ impl Lending {
         editor.set_agent_history(self.root.with_file_name("agent_history"));
         if let Some(media) = &self.media {
             editor.set_media(media.clone());
+        }
+        if let Some(brand) = &self.brand {
+            editor.set_brand_kit(brand.clone());
         }
         editor.offer_link_media();
     }

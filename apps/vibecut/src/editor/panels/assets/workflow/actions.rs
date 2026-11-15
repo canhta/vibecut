@@ -13,6 +13,7 @@ impl State {
             self.music_loaded();
         }
         self.poll_sticker_download();
+        self.poll_brand(port);
         if let Some((text, detail)) = self.poll_clip_exports() {
             let message = port.tr(text);
             port.toast(message, detail);
@@ -35,6 +36,12 @@ impl State {
                     }
                 }
                 Action::Command(id) => port.request(Request::Action(id)),
+                Action::RefreshBrand => {
+                    if let Some(brand) = &mut self.brand {
+                        brand.refresh();
+                    }
+                }
+                Action::InsertBrandMedia(media) => self.insert_brand_media(port, media),
                 Action::Select(id, modifiers) => self.select_asset(port, id, modifiers),
                 Action::Delete(ids) => self.request_media_delete(port.session, ids),
                 Action::RenameMedia(id) => self.request_media_rename(port.session, id),

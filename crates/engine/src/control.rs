@@ -3,11 +3,11 @@ use crate::jobs::{JobId, JobRunner};
 use crate::{Command, Session};
 
 pub use crate::session::wire::{
-    API_VERSION, BrandColorView, BrandEntryState, BrandKitView, BrandMediaView, CaptionsResult,
-    ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy, ClipExportShort, ClipPieceRange,
-    ClipPieceSpan, ClipRefusal, ClipShotsDiagnostic, ClipSubtitleFile, ClipsResult, ControlError,
-    ControlResult, CostView, Cursor, ErrorCode, Event, Failure, FillerCandidate, FontEntry,
-    FontLoad, FontLoadState, FontOrigin, FontState, JobOutput, JobView, LIMITS, Limits,
+    API_VERSION, BrandColorView, BrandEntryState, BrandKitView, BrandMediaSection, BrandMediaView,
+    CaptionsResult, ClipAdjustment, ClipCandidateView, ClipEdge, ClipEnergy, ClipExportShort,
+    ClipPieceRange, ClipPieceSpan, ClipRefusal, ClipShotsDiagnostic, ClipSubtitleFile, ClipsResult,
+    ControlError, ControlResult, CostView, Cursor, ErrorCode, Event, Failure, FillerCandidate,
+    FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobOutput, JobView, LIMITS, Limits,
     MAX_BATCH_COMMANDS, MAX_BATCH_DEPTH, MAX_COLLECTION, MAX_DEPTH, MAX_EVENTS, MAX_FRAME_BYTES,
     MAX_KEY_BYTES, MAX_NODES, MAX_PATH_BYTES, MAX_PAUSE_MS, MAX_PAUSE_SPANS, MAX_PREVIEW_CLIPS,
     MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_RECEIPT_BYTES, MAX_RECEIPTS, MAX_RESPONSE_BYTES,

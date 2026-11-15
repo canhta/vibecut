@@ -289,7 +289,10 @@ values onto this item; Save stores its current appearance as the first free `Sty
 using `text.save_preset`. Both use the engine preset commands from
 [text presets](../../../../../../crates/engine/src/session/edit/README.md#text-presets),
 and the row's selection compares the complete stored style. Words and animation keys are
-never saved.
+never saved. Save style first shows the reference's notice (capture 2026-11-14b, frame 103808):
+title `Notice`, the capture's two sentences with the product name left out, and one OK
+(`inspector.text_preset.notice.ok`) that goes on to save; Escape or a click outside closes
+it and saves nothing.
 
 Below the box rows, a stroke on shows Thickness (`inspector.text_stroke_thickness`, 0-100) and a
 shadow on shows Opacity (`inspector.text_shadow_opacity`), Bluriness

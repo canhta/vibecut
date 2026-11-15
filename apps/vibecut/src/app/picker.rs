@@ -50,6 +50,8 @@ pub(super) enum PickerAction {
     /// The shorts window's source video or export folder. The workspace owns this dialog,
     /// not an editor window; its answer goes to the shorts state.
     Shorts(shorts::Pick),
+    /// Files for one section of Home's brand kit page; the workspace owns this dialog too.
+    BrandKit(engine::control::BrandMediaSection),
 }
 pub(super) struct Picker {
     pub(super) future:
@@ -72,8 +74,8 @@ impl EditorWindow {
         let future: std::pin::Pin<
             Box<dyn std::future::Future<Output = Option<Vec<rfd::FileHandle>>>>,
         > = match action {
-            PickerAction::Shorts(_) => {
-                return Err(Error::Invalid("shorts picks belong to the workspace"));
+            PickerAction::Shorts(_) | PickerAction::BrandKit(_) => {
+                return Err(Error::Invalid("workspace picks belong to the workspace"));
             }
             PickerAction::Open => {
                 let dialog = rfd::AsyncFileDialog::new()
@@ -488,7 +490,7 @@ impl EditorWindow {
                             .collect();
                         self.import_picked_files(paths)
                     }
-                    PickerAction::Shorts(_) => Ok(()),
+                    PickerAction::Shorts(_) | PickerAction::BrandKit(_) => Ok(()),
                 };
                 if let Err(e) = result {
                     self.error = Some(e);
@@ -522,7 +524,57 @@ pub(super) fn shorts_picker(ctx: &egui::Context, kind: shorts::Pick, locale: Loc
     }
 }
 
+/// Home's brand kit dialog for one section: several files of that section's kind.
+pub(super) fn brand_picker(
+    ctx: &egui::Context,
+    section: engine::control::BrandMediaSection,
+    locale: Locale,
+) -> Picker {
+    use engine::control::BrandMediaSection;
+    const VIDEO: &[&str] = &["mp4", "mov", "m4v", "mkv", "webm", "avi"];
+    const MUSIC: &[&str] = &["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus"];
+    const IMAGE: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff"];
+    let (label, extensions) = match section {
+        BrandMediaSection::Video => (Text::Video, VIDEO),
+        BrandMediaSection::Music => (Text::Music, MUSIC),
+        BrandMediaSection::Image | BrandMediaSection::Sticker | BrandMediaSection::Background => {
+            (Text::Image, IMAGE)
+        }
+    };
+    let dialog = rfd::AsyncFileDialog::new().add_filter(i18n::text(locale, label), extensions);
+    Picker {
+        future: Box::pin(dialog.pick_files()),
+        action: PickerAction::BrandKit(section),
+        waker: std::task::Waker::from(Arc::new(Repaint(ctx.clone()))),
+    }
+}
+
 impl Workspace {
+    /// Hand Home's brand kit dialog answer to its page without blocking; a dismissed dialog
+    /// adds nothing.
+    pub(super) fn poll_brand_picker(&mut self) {
+        let Some(mut picker) = self.brand_picker.take() else {
+            return;
+        };
+        let std::task::Poll::Ready(files) = picker
+            .future
+            .as_mut()
+            .poll(&mut std::task::Context::from_waker(&picker.waker))
+        else {
+            self.brand_picker = Some(picker);
+            return;
+        };
+        let PickerAction::BrandKit(section) = picker.action else {
+            return;
+        };
+        let paths = files
+            .unwrap_or_default()
+            .into_iter()
+            .map(|file| file.path().to_owned())
+            .collect();
+        self.projects.brand_media_picked(section, paths);
+    }
+
     /// Hand the shorts window's dialog answer to its state without blocking. A dismissed
     /// dialog releases the window's pick with no path.
     pub(super) fn poll_shorts_picker(&mut self) {

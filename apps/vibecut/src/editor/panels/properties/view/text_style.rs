@@ -679,8 +679,48 @@ impl Panel<'_, '_> {
                 });
         }
         if response.clicked() {
+            self.state.preset_notice = Some((item, snapshot));
+        }
+        self.preset_notice(ui);
+    }
+
+    /// The reference's notice before a save: its wording, one OK that goes on to save. Escape
+    /// or a click outside dismisses it and saves nothing.
+    fn preset_notice(&mut self, ui: &egui::Ui) {
+        let Some((item, snapshot)) = self.state.preset_notice.clone() else {
+            return;
+        };
+        let ctx = ui.ctx().clone();
+        let mut ok = None;
+        let modal = egui::Modal::new(Id::unique("inspector.text_preset.notice"))
+            .frame(kit::dialog_frame(&ctx))
+            .show(&ctx, |ui| {
+                // Ours: the capture does not measure the notice, so it takes the toast width.
+                ui.set_max_width(theme::size::TOAST_WIDTH);
+                kit::dialog_title(ui, self.tr(Text::PresetNoticeTitle));
+                ui.label(
+                    egui::RichText::new(self.tr(Text::PresetNoticeBody))
+                        .size(theme::type_size::BODY),
+                );
+                ui.add_space(theme::space::LG);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                    ok = Some(kit::dialog_button(
+                        ui,
+                        "inspector.text_preset.notice.ok",
+                        self.tr(Text::Ok),
+                        true,
+                    ));
+                });
+            });
+        if let Some(ok) = &ok {
+            self.remember("inspector.text_preset.notice.ok", ok);
+        }
+        if ok.is_some_and(|ok| ok.clicked()) {
+            self.state.preset_notice = None;
             self.actions
                 .push(crate::editor::properties::Action::SaveTextPreset { item, snapshot });
+        } else if modal.should_close() {
+            self.state.preset_notice = None;
         }
     }
 }

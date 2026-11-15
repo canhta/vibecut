@@ -18,6 +18,7 @@ impl BrandKit {
             .map(|(media, state)| BrandMediaView {
                 id: media.id,
                 name: media.name,
+                section: media.section,
                 sha256: media.sha256,
                 size: media.size,
                 state: state.into(),

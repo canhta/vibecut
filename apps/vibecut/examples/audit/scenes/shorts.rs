@@ -76,6 +76,7 @@ pub(super) fn shorts_scene(
             app: App::Shorts(Box::new(shorts)),
             _model_cache: None,
             _sound_library: None,
+            _brand_kit: None,
         });
     app.run_steps(3);
     if scene == "generating" {

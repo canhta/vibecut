@@ -133,6 +133,13 @@ impl Panel<'_, '_> {
                 if response.clicked() {
                     // The reference dropdown hangs from the field's right edge.
                     let anchor = response.rect.right_bottom() + egui::vec2(0.0, theme::space::XS);
+                    // The active brand kit's families lead the list; an unreadable store adds none.
+                    self.state.font_picker.kit = self
+                        .state
+                        .brand
+                        .as_ref()
+                        .and_then(|kit| kit.active_fonts().ok())
+                        .unwrap_or_default();
                     self.state.font_picker.open(anchor, current);
                 }
                 self.compatible_count(ui, field.compatible);

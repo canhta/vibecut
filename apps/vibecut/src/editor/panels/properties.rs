@@ -166,6 +166,11 @@ pub(in crate::editor) struct State {
     color_base: Option<Arc<project::Project>>,
     /// Font picker popover, its catalog and download.
     font_picker: font_picker::State,
+    /// The user's brand kits, lent by the composition root; the font list reads the active
+    /// kit's families from it each time it opens.
+    brand: Option<Arc<libraries::brand_kit::BrandKit>>,
+    /// The Save style notice is open for this item and snapshot; OK goes on to save.
+    preset_notice: Option<(ItemId, Arc<project::Project>)>,
     /// Catalog commands for the font picker; opened lazily on first use.
     font_backend: Option<Box<dyn font_picker::Backend>>,
     lut: workflow::jobs::lut::LutWorkflow,
@@ -221,6 +226,11 @@ impl State {
         self.reorder
             .as_ref()
             .map(|drag| format!("effects.row.{}.handle", drag.effect))
+    }
+
+    /// Lend the user's brand kits: the font list puts the active kit's families first.
+    pub(in crate::editor) fn set_brand_kit(&mut self, kit: Arc<libraries::brand_kit::BrandKit>) {
+        self.brand = Some(kit);
     }
 
     /// Set the catalog backend the facade injects.
@@ -313,6 +323,8 @@ impl Default for State {
             picker: None,
             color_base: None,
             font_picker: font_picker::State::default(),
+            brand: None,
+            preset_notice: None,
             font_backend: None,
             lut: workflow::jobs::lut::LutWorkflow::default(),
             footage: workflow::jobs::footage::FootageWorkflow::default(),

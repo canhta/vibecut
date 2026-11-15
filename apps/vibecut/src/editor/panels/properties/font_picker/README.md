@@ -22,7 +22,9 @@ The popover follows the reference dropdown: a search field, the All and Commerci
 (bundled, catalogue and imported families) and a System font section (operating-system
 families). Favourites persist through `ui.prefs.set` and float to the top of their section.
 Rows have a check gutter, the name, a state cell, a download icon (only for a family not
-yet downloaded) and the star at the right edge. A name uses its own typeface once the
+yet downloaded) and the star at the right edge. The active brand kit's families, read from
+the lent `libraries::brand_kit` store each time the picker opens, lead the Presets section in
+kit order whatever their origin, ahead of favourites. A name uses its own typeface once the
 shared text registry resolves the family; otherwise the UI font.
 
 Loading, failed previews with Retry, no result, not downloaded, downloading with Cancel

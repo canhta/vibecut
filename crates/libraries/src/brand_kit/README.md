@@ -8,7 +8,7 @@
 |---|---|---|
 | Colour | `name`, `rgba` bytes | ordered by insertion; names unique within the kit |
 | Font | family name | names a family in the font store; the kit does not verify availability |
-| Media | file copied in, named by its SHA-256 | recorded with name, size and hash; verified on every listing |
+| Media | file copied in, named by its SHA-256 | recorded with name, section (video, image, sticker, background, music: the Home brand kit page's sections), size and hash; verified on every listing |
 | Text preset | `project::SavedTextPreset` | the type and its name rule belong to `project`; the kit stores it unchanged |
 | Caption preset | `project::SavedCaptionPreset` | likewise |
 
@@ -16,7 +16,7 @@ Adjustment presets are not stored yet: their type lives in the desktop app's pre
 
 ## Operations
 
-`create`, `rename`, `delete`, `set_active` manage kits; `kits()` lists them with the active flag. `add_color`, `remove_color`, `add_font`, `remove_font`, `add_media`, `remove_media`, `add_text_preset`, `remove_text_preset`, `add_caption_preset` and `remove_caption_preset` edit one kit. Removal by name returns `NotFound` when the name is absent. `active_view()` returns the active kit as the engine's `BrandKitView`, the value `brand.list` reports.
+`create`, `rename`, `delete`, `set_active` manage kits; `kits()` lists them with the active flag. `add_color`, `remove_color`, `add_font`, `remove_font`, `add_media` (into a section), `rename_media`, `remove_media`, `add_text_preset`, `remove_text_preset`, `add_caption_preset` and `remove_caption_preset` edit one kit. Removal by name returns `NotFound` when the name is absent. `active_view()` returns the active kit as the engine's `BrandKitView`, the value `brand.list` reports; it hashes every media file, so callers run it off the UI thread. `active_fonts()` reads the active kit's families without touching a file. `copy_media(kit, media, dest)` copies one stored file to a new path and verifies the copy: a project inserting a kit file imports that copy, never the stored file.
 
 Every change is validated as a whole, written to `brand_kits.json` through a `.partial` file and renamed into place, and only then published. A failed change leaves the previous state; media files that no kit cites are removed. One `project::WriterLease` on `brand_kits.vibecut` serialises writers across processes.
 

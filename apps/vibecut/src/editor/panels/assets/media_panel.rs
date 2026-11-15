@@ -1,6 +1,7 @@
 //! Media library presentation state: view mode, stable sorting and type
 //! classification. Project assets stay owned by the engine; this module never
 //! mutates a `SourceAsset` and reads file size only for display/sort.
+pub(in crate::editor) mod brand;
 pub(in crate::editor) mod clips;
 mod library;
 use media::{AssetId, SourceAsset, StreamKind};

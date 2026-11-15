@@ -193,15 +193,22 @@ impl Workspace {
                         None
                     }
                 });
+                let locale = self.preferences.locale;
                 let cx = home::Context {
                     look: self.preferences.look(),
                     default_fps: self.preferences.default_fps,
                     projects: &mut self.preferences.projects,
                     status,
                     welcome_seen: &mut self.preferences.welcome_seen,
+                    brand: self.lending.brand(),
                 };
                 for action in home::show(&mut self.projects, cx, ui) {
-                    self.project_action(action);
+                    if let home::Action::PickBrandMedia(section) = action {
+                        self.brand_picker =
+                            Some(super::picker::brand_picker(&ctx, section, locale));
+                    } else {
+                        self.project_action(action);
+                    }
                 }
                 self.home_shortcuts(&ctx);
             }
