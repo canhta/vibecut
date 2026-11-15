@@ -726,46 +726,6 @@ fn luma_key(@builtin(global_invocation_id) id: vec3<u32>) {
 
 // ---- 265 warps.
 
-// Mirrors whole_image::twirl; weights = [centre x, centre y, angle, radius].
-@compute @workgroup_size(8, 8)
-fn twirl(@builtin(global_invocation_id) id: vec3<u32>) {
-    if id.x >= p.width || id.y >= p.height { return; }
-    let i = id.y * p.width + id.x;
-    let cx = weights[0];
-    let cy = weights[1];
-    let radius = weights[3];
-    let dx = f32(id.x) + 0.5 - cx;
-    let dy = f32(id.y) + 0.5 - cy;
-    let d = sqrt(dx * dx + dy * dy);
-    var out = src[i];
-    if radius > 0.0 && d < radius {
-        let k = 1.0 - d / radius;
-        let a = weights[2] * k * k;
-        let s = sin(a);
-        let c = cos(a);
-        out = cur_sample(cx + dx * c - dy * s - 0.5, cy + dx * s + dy * c - 0.5, EDGE_CLAMP);
-    }
-    dst[i] = sample_exit(out);
-}
-// Mirrors whole_image::spherize; weights = [centre x, centre y, radius].
-@compute @workgroup_size(8, 8)
-fn spherize(@builtin(global_invocation_id) id: vec3<u32>) {
-    if id.x >= p.width || id.y >= p.height { return; }
-    let i = id.y * p.width + id.x;
-    let cx = weights[0];
-    let cy = weights[1];
-    let radius = weights[2];
-    let dx = f32(id.x) + 0.5 - cx;
-    let dy = f32(id.y) + 0.5 - cy;
-    let d = sqrt(dx * dx + dy * dy);
-    var out = src[i];
-    if !(radius < 0.5 || d >= radius || d < 1e-9) {
-        let n = d / radius;
-        let k = 1.0 - 0.5 * sqrt(max(1.0 - n * n, 0.0));
-        out = cur_sample(cx + dx * k - 0.5, cy + dy * k - 0.5, EDGE_CLAMP);
-    }
-    dst[i] = sample_exit(out);
-}
 // Mirrors whole_image::magnify; weights = [centre x, centre y, magnification, size,
 // feather, shape].
 @compute @workgroup_size(8, 8)
@@ -788,132 +748,6 @@ fn magnify(@builtin(global_invocation_id) id: vec3<u32>) {
         let m = max(weights[2] / 100.0, 0.01);
         let s = cur_sample(cx + dx / m - 0.5, cy + dy / m - 0.5, EDGE_CLAMP);
         out = base + (s - base) * k;
-    }
-    dst[i] = sample_exit(out);
-}
-// Mirrors whole_image::wave_warp; weights = [height, width, direction, phase].
-@compute @workgroup_size(8, 8)
-fn wave_warp(@builtin(global_invocation_id) id: vec3<u32>) {
-    if id.x >= p.width || id.y >= p.height { return; }
-    let i = id.y * p.width + id.x;
-    let px = f32(id.x) + 0.5;
-    let py = f32(id.y) + 0.5;
-    let ux = sin(weights[2]);
-    let uy = -cos(weights[2]);
-    let along = px * ux + py * uy;
-    let offset = weights[0] * sin(along / max(weights[1], 1e-3) * TAU - weights[3]);
-    dst[i] = sample_exit(cur_sample(px - uy * offset - 0.5, py + ux * offset - 0.5, EDGE_CLAMP));
-}
-// Mirrors whole_image::lens_distortion; weights = [curvature, centre x, centre y, norm].
-@compute @workgroup_size(8, 8)
-fn lens_distortion(@builtin(global_invocation_id) id: vec3<u32>) {
-    if id.x >= p.width || id.y >= p.height { return; }
-    let i = id.y * p.width + id.x;
-    let cx = weights[1];
-    let cy = weights[2];
-    let norm = weights[3];
-    let dx = (f32(id.x) + 0.5 - cx) / norm;
-    let dy = (f32(id.y) + 0.5 - cy) / norm;
-    let scale = 1.0 - weights[0] * (dx * dx + dy * dy);
-    dst[i] = sample_exit(cur_sample(cx + dx * scale * norm - 0.5, cy + dy * scale * norm - 0.5, EDGE_CLAMP));
-}
-// One displacement channel of whole_image::turbulent_displace.
-fn turbulence(x: f32, y: f32, channel_index: f32, evolution: f32, complexity: f32) -> f32 {
-    return fbm(x + channel_index * 31.7, y, evolution + channel_index * 3.1, complexity, 0u);
-}
-// Mirrors whole_image::turbulent_displace; weights = [kind, amount, size, offset x,
-// offset y, complexity, evolution, coarse].
-@compute @workgroup_size(8, 8)
-fn turbulent_displace(@builtin(global_invocation_id) id: vec3<u32>) {
-    if id.x >= p.width || id.y >= p.height { return; }
-    let i = id.y * p.width + id.x;
-    let kind = i32(round_away(weights[0]));
-    let amount = weights[1];
-    var complexity = weights[5];
-    if weights[7] > 0.5 { complexity = min(complexity, 3.0); }
-    let evolution = weights[6];
-    let px = f32(id.x) + 0.5;
-    let py = f32(id.y) + 0.5;
-    let size = max(weights[2], 0.5);
-    let u = px / size + weights[3];
-    let v = py / size + weights[4];
-    var d = vec2<f32>(0.0);
-    switch kind {
-        case 0, 3: {
-            d = vec2<f32>(turbulence(u, v, 0.0, evolution, complexity), turbulence(u, v, 1.0, evolution, complexity));
-        }
-        case 1, 4, 2, 5: {
-            let eps: f32 = 0.05;
-            let gx = (turbulence(u + eps, v, 0.0, evolution, complexity) - turbulence(u - eps, v, 0.0, evolution, complexity)) / (2.0 * eps);
-            let gy = (turbulence(u, v + eps, 0.0, evolution, complexity) - turbulence(u, v - eps, 0.0, evolution, complexity)) / (2.0 * eps);
-            if kind == 1 || kind == 4 {
-                d = vec2<f32>(gx * 0.3, gy * 0.3);
-            } else {
-                d = vec2<f32>(-gy * 0.3, gx * 0.3);
-            }
-        }
-        case 6: {
-            d = vec2<f32>(0.0, turbulence(u, v, 0.0, evolution, complexity));
-        }
-        case 7: {
-            d = vec2<f32>(turbulence(u, v, 0.0, evolution, complexity), 0.0);
-        }
-        default: {
-            let q = turbulence(u, v, 0.0, evolution, complexity);
-            d = vec2<f32>(q, q);
-        }
-    }
-    dst[i] = sample_exit(cur_sample(px - d.x * amount - 0.5, py - d.y * amount - 0.5, EDGE_CLAMP));
-}
-// Mirrors whole_image::corner_pin; weights = the inverse homography (9), width, height.
-@compute @workgroup_size(8, 8)
-fn corner_pin(@builtin(global_invocation_id) id: vec3<u32>) {
-    if id.x >= p.width || id.y >= p.height { return; }
-    let i = id.y * p.width + id.x;
-    let px = f32(id.x) + 0.5;
-    let py = f32(id.y) + 0.5;
-    let wv = weights[6] * px + weights[7] * py + weights[8];
-    var out = vec4<f32>(0.0);
-    if abs(wv) >= 1e-12 {
-        let u = (weights[0] * px + weights[1] * py + weights[2]) / wv;
-        let v = (weights[3] * px + weights[4] * py + weights[5]) / wv;
-        let margin: f32 = 1e-3;
-        let hi = 1.0 + margin;
-        if u >= -margin && u <= hi && v >= -margin && v <= hi {
-            out = in_sample(u * weights[9] - 0.5, v * weights[10] - 0.5, EDGE_TRANSPARENT);
-        }
-    }
-    dst[i] = sample_exit(out);
-}
-// Mirrors whole_image::basic_3d; weights = [swivel, tilt, distance, focal, width, height].
-@compute @workgroup_size(8, 8)
-fn basic_3d(@builtin(global_invocation_id) id: vec3<u32>) {
-    if id.x >= p.width || id.y >= p.height { return; }
-    let i = id.y * p.width + id.x;
-    let focal = weights[3];
-    let width = weights[4];
-    let height = weights[5];
-    let qx = f32(id.x) + 0.5 - width / 2.0;
-    let qy = f32(id.y) + 0.5 - height / 2.0;
-    let ss = sin(weights[0]);
-    let cs = cos(weights[0]);
-    let st = sin(weights[1]);
-    let ct = cos(weights[1]);
-    let n = vec3<f32>(ss * ct, -st, cs * ct);
-    let uu = vec3<f32>(cs, 0.0, -ss);
-    let vv = vec3<f32>(ss * st, ct, cs * st);
-    let z0 = focal + weights[2] * 10.0;
-    let dir = vec3<f32>(qx, qy, focal);
-    let denom = n.x * dir.x + n.y * dir.y + n.z * dir.z;
-    var out = vec4<f32>(0.0);
-    if abs(denom) >= 1e-9 {
-        let t = (n.z * z0) / denom;
-        if t > 0.0 {
-            let hit = vec3<f32>(dir.x * t, dir.y * t, dir.z * t - z0);
-            let su = hit.x * uu.x + hit.y * uu.y + hit.z * uu.z;
-            let sv = hit.x * vv.x + hit.y * vv.y + hit.z * vv.z;
-            out = in_sample(su + width / 2.0 - 0.5, sv + height / 2.0 - 0.5, EDGE_TRANSPARENT);
-        }
     }
     dst[i] = sample_exit(out);
 }
@@ -992,23 +826,6 @@ fn roughen_edges(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     dst[i] = sample_exit(out * k);
 }
-// Mirrors whole_image::camera_shake; weights = [offset x, offset y, scale, angle], the
-// frame's shake evaluated once by the reference's evaluator.
-@compute @workgroup_size(8, 8)
-fn camera_shake(@builtin(global_invocation_id) id: vec3<u32>) {
-    if id.x >= p.width || id.y >= p.height { return; }
-    let i = id.y * p.width + id.x;
-    let w = f32(p.width);
-    let h = f32(p.height);
-    let qx = (f32(id.x) + 0.5 - w / 2.0 - weights[0]) / weights[2];
-    let qy = (f32(id.y) + 0.5 - h / 2.0 - weights[1]) / weights[2];
-    let s = sin(weights[3]);
-    let c = cos(weights[3]);
-    let rx = qx * c - qy * s;
-    let ry = qx * s + qy * c;
-    dst[i] = sample_exit(in_sample(rx + w / 2.0 - 0.5, ry + h / 2.0 - 0.5, EDGE_CLAMP));
-}
-
 // ---- 265 glows and light.
 
 // Encoded linear luma times coverage of one clamped neighbour, as sobel_edges reads it.

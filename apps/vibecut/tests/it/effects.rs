@@ -249,22 +249,14 @@ fn pixel_parity(gpu: &vibecut::services::gpu::effects::GpuEffects, image: &Image
 /// One effect: its kind, the parameters it overrides and its item-local seconds.
 type EffectRow = (&'static str, Vec<(&'static str, project::EffectValue)>, f64);
 /// The 264 and 265 shader entries; every one is measured by at least three rows.
-const ROW_ENTRIES: [&str; 33] = [
+const ROW_ENTRIES: [&str; 25] = [
     "highlights",
     "alpha_plane",
     "color_key",
     "luma_key",
-    "twirl",
-    "spherize",
     "magnify",
-    "wave_warp",
-    "lens_distortion",
-    "turbulent_displace",
-    "corner_pin",
-    "basic_3d",
     "brush_strokes",
     "roughen_edges",
-    "camera_shake",
     "sobel_edges",
     "glow_add",
     "glint_rays",
@@ -293,36 +285,6 @@ fn effect_rows() -> Vec<EffectRow> {
     let pt = |x, y| V::Point([x, y]);
     let rgb = |r, g, b| V::Color(Color([r, g, b, 255]));
     vec![
-        ("twirl", vec![], 0.0),
-        (
-            "twirl",
-            vec![
-                ("angle", s(300.0)),
-                ("radius", s(80.0)),
-                ("center", pt(0.3, 0.6)),
-            ],
-            0.0,
-        ),
-        (
-            "twirl",
-            vec![
-                ("angle", s(-120.0)),
-                ("radius", s(15.0)),
-                ("center", pt(0.8, 0.2)),
-            ],
-            0.0,
-        ),
-        ("spherize", vec![("radius", s(20.0))], 0.0),
-        (
-            "spherize",
-            vec![("radius", s(60.0)), ("center", pt(0.3, 0.7))],
-            0.0,
-        ),
-        (
-            "spherize",
-            vec![("radius", s(8.0)), ("center", pt(0.9, 0.1))],
-            0.0,
-        ),
         ("magnify", vec![], 0.0),
         (
             "magnify",
@@ -341,102 +303,6 @@ fn effect_rows() -> Vec<EffectRow> {
                 ("magnification", s(600.0)),
                 ("size", s(12.0)),
                 ("center", pt(0.7, 0.6)),
-            ],
-            0.0,
-        ),
-        ("wave_warp", vec![], 0.0),
-        (
-            "wave_warp",
-            vec![
-                ("height", s(-25.0)),
-                ("width", s(13.0)),
-                ("direction", s(30.0)),
-                ("speed", s(2.0)),
-            ],
-            0.37,
-        ),
-        (
-            "wave_warp",
-            vec![
-                ("height", s(3.0)),
-                ("width", s(200.0)),
-                ("direction", s(200.0)),
-            ],
-            1.5,
-        ),
-        ("lens_distortion", vec![("curvature", s(40.0))], 0.0),
-        (
-            "lens_distortion",
-            vec![
-                ("curvature", s(-70.0)),
-                ("v_decentering", s(30.0)),
-                ("h_decentering", s(-20.0)),
-            ],
-            0.0,
-        ),
-        (
-            "lens_distortion",
-            vec![("curvature", s(100.0)), ("h_decentering", s(50.0))],
-            0.0,
-        ),
-        ("turbulent_displace", vec![], 0.0),
-        (
-            "turbulent_displace",
-            vec![
-                ("displacement", V::Choice(1)),
-                ("amount", s(-30.0)),
-                ("size", s(20.0)),
-                ("complexity", s(4.5)),
-                ("evolution", s(70.0)),
-                ("offset", pt(0.3, 0.7)),
-            ],
-            0.0,
-        ),
-        (
-            "turbulent_displace",
-            vec![
-                ("displacement", V::Choice(6)),
-                ("amount", s(12.0)),
-                ("size", s(8.0)),
-                ("complexity", s(10.0)),
-            ],
-            0.0,
-        ),
-        (
-            "corner_pin",
-            vec![
-                ("upper_left", pt(0.1, 0.05)),
-                ("lower_right", pt(0.85, 0.95)),
-            ],
-            0.0,
-        ),
-        (
-            "corner_pin",
-            vec![("upper_right", pt(0.7, 0.2)), ("lower_left", pt(0.2, 0.8))],
-            0.0,
-        ),
-        (
-            "corner_pin",
-            vec![
-                ("upper_left", pt(0.2, 0.1)),
-                ("upper_right", pt(0.9, 0.0)),
-                ("lower_right", pt(1.0, 0.9)),
-                ("lower_left", pt(0.0, 1.0)),
-            ],
-            0.0,
-        ),
-        ("basic_3d", vec![("swivel", s(30.0))], 0.0),
-        (
-            "basic_3d",
-            vec![("tilt", s(-25.0)), ("distance", s(40.0))],
-            0.0,
-        ),
-        (
-            "basic_3d",
-            vec![
-                ("swivel", s(-50.0)),
-                ("tilt", s(15.0)),
-                ("distance", s(-20.0)),
             ],
             0.0,
         ),
@@ -476,27 +342,6 @@ fn effect_rows() -> Vec<EffectRow> {
                 ("complexity", s(1.0)),
             ],
             0.0,
-        ),
-        ("camera_shake", vec![], 0.4),
-        (
-            "camera_shake",
-            vec![
-                ("amount", s(60.0)),
-                ("rotation", s(8.0)),
-                ("zoom", s(30.0)),
-                ("frequency", s(9.0)),
-            ],
-            1.3,
-        ),
-        (
-            "camera_shake",
-            vec![
-                ("amount", s(5.0)),
-                ("rotation", s(0.0)),
-                ("zoom", s(0.0)),
-                ("frequency", s(0.5)),
-            ],
-            2.0,
         ),
         ("echo_glow", vec![], 0.0),
         (
@@ -930,14 +775,12 @@ fn effect_passes(row: &EffectRow, width: u32, height: u32, fine: bool) -> Vec<Ef
     )
     .unwrap()
 }
-/// Every pass of every [`effect_rows`] row runs on the CPU and on the measuring
-/// adapter from the same CPU-computed current image, so each shader entry is
-/// compared alone. Prints each error, counts measured rows per entry in
-/// `measured` and records proven entries over 2e-5 in `failures`; an unproven
-/// entry's error is the lander's evidence for admitting it.
+/// Every pass of every [`effect_rows`] row runs on the CPU and on the adapter from
+/// the same CPU-computed current image, so each shader entry is compared alone.
+/// Prints each error, counts measured rows per entry in `measured` and records
+/// entries over 2e-5 in `failures`.
 fn effect_entry_parity(
     gpu: &vibecut::services::gpu::effects::GpuEffects,
-    measuring: &vibecut::services::gpu::effects::GpuEffects,
     image: &Image,
     label: &str,
     measured: &mut std::collections::BTreeMap<&'static str, usize>,
@@ -959,16 +802,15 @@ fn effect_entry_parity(
             let one = std::slice::from_ref(pass);
             let cpu = CpuEffects.apply(&current, one, inputs(), &Hooks).unwrap();
             let entry = pass.entry_point();
-            if entry != "gaussian" {
-                let proven = gpu.supports(entry);
-                match measuring.apply(&current, one, inputs(), &Hooks) {
+            if entry != "gaussian" && gpu.supports(entry) {
+                match gpu.apply(&current, one, inputs(), &Hooks) {
                     Ok(actual) => {
                         let max = max_error(&cpu, &actual);
                         *measured.entry(entry).or_default() += 1;
                         eprintln!(
-                            "entry-parity {label} kind={kind} params={params:?} t={seconds} entry={entry} proven={proven} max_abs={max:e}"
+                            "entry-parity {label} kind={kind} params={params:?} t={seconds} entry={entry} max_abs={max:e}"
                         );
-                        if proven && max > 2e-5 {
+                        if max > 2e-5 {
                             failures.push(format!("{label} {kind} {params:?} {entry} {max:e}"));
                         }
                     }
@@ -1007,22 +849,15 @@ fn heavy_gpu_matches_cpu_working_pixels_at_both_scales() {
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
     let gpu = std::sync::Arc::new(
         pollster::block_on(vibecut::services::gpu::effects::GpuEffects::new(
-            device.clone(),
-            queue.clone(),
+            device, queue,
         ))
         .unwrap(),
     );
-    let measuring = pollster::block_on(vibecut::services::gpu::effects::GpuEffects::measuring(
-        device, queue,
-    ))
-    .unwrap();
-    for entry in ["color_mix", "gamma_unknown", "posterize"] {
+    for entry in ["color_mix", "gamma_unknown", "posterize", "twirl"] {
         assert!(!gpu.supports(entry), "unadmitted {entry}");
     }
-    // Production runs exactly the proven entries; measurement runs every entry.
     for entry in shader_entries() {
-        assert!(measuring.supports(entry.name), "{}", entry.name);
-        assert_eq!(gpu.supports(entry.name), entry.proven, "{}", entry.name);
+        assert!(gpu.supports(entry.name), "{}", entry.name);
     }
     let mut measured = std::collections::BTreeMap::new();
     let mut failures = Vec::new();
@@ -1219,7 +1054,6 @@ fn heavy_gpu_matches_cpu_working_pixels_at_both_scales() {
         pixel_parity(&gpu, &image, &format!("scale-{scale}"));
         effect_entry_parity(
             &gpu,
-            &measuring,
             &image,
             &format!("scale-{scale}"),
             &mut measured,
@@ -1494,7 +1328,7 @@ fn heavy_gpu_matches_cpu_working_pixels_at_both_scales() {
     }
     assert!(
         failures.is_empty(),
-        "proven entries over 2e-5:\n{}",
+        "shader entries over 2e-5:\n{}",
         failures.join("\n")
     );
     // Exercise bounded repeated passes separately from the small-resolution scale fixtures.
@@ -1845,18 +1679,13 @@ fn heavy_pixel_effects_native_1080p_measurement() {
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
     let start = std::time::Instant::now();
     let gpu = pollster::block_on(vibecut::services::gpu::effects::GpuEffects::new(
-        device.clone(),
-        queue.clone(),
+        device, queue,
     ))
     .unwrap();
     eprintln!(
         "measurement pipeline_setup_ms={:.3}",
         start.elapsed().as_secs_f64() * 1000.0
     );
-    let measuring = pollster::block_on(vibecut::services::gpu::effects::GpuEffects::measuring(
-        device, queue,
-    ))
-    .unwrap();
     let meter = Meter {
         budget: engine::ByteBudget::new(256 << 20).unwrap(),
         peak: AtomicU64::new(0),
@@ -1922,9 +1751,8 @@ fn heavy_pixel_effects_native_1080p_measurement() {
     }
     // Preview (`fine` false) cost of each 264/265 effect at its first row, through
     // the run splitter as the preview runs it: the CPU reference on up to eight
-    // workers, the production adapter (unproven entries and refused passes fall
-    // back to the CPU) and the measuring adapter (every shader entry on the
-    // device). One warm-up, then three timed frames. The error against the CPU is
+    // workers and the adapter (refused passes and entries without a shader fall
+    // back to the CPU). One warm-up, then three timed frames. The error against the CPU is
     // printed, not asserted: at 1920 pixels a sample coordinate's f32 roundoff
     // alone moves a bilinear tap, so parity is the scale fixtures' table.
     struct Workers;
@@ -1955,9 +1783,9 @@ fn heavy_pixel_effects_native_1080p_measurement() {
             continue;
         }
         let passes = effect_passes(&row, 1920, 1080, false);
-        let adapters: [&dyn EffectCompositor; 3] = [&CpuEffects, &gpu, &measuring];
-        let mut times = [Vec::new(), Vec::new(), Vec::new()];
-        let mut errors = [0.0_f32; 3];
+        let adapters: [&dyn EffectCompositor; 2] = [&CpuEffects, &gpu];
+        let mut times = [Vec::new(), Vec::new()];
+        let mut error = 0.0_f32;
         for run in 0..4 {
             let mut reference = None;
             for (slot, adapter) in adapters.into_iter().enumerate() {
@@ -1973,7 +1801,7 @@ fn heavy_pixel_effects_native_1080p_measurement() {
                 if slot == 0 {
                     reference = Some(output);
                 } else if let Some(cpu) = &reference {
-                    errors[slot] = errors[slot].max(max_error(cpu, &output));
+                    error = error.max(max_error(cpu, &output));
                 }
             }
         }
@@ -1981,13 +1809,11 @@ fn heavy_pixel_effects_native_1080p_measurement() {
             samples.sort_by(f64::total_cmp);
             samples[samples.len() / 2]
         };
-        let [cpu_ms, gpu_ms, device_ms] = times.each_mut().map(median);
+        let [cpu_ms, gpu_ms] = times.each_mut().map(median);
         eprintln!(
-            "measurement-effect kind={} passes={} cpu_ms={cpu_ms:.3} gpu_ms={gpu_ms:.3} device_ms={device_ms:.3} gpu_max_abs={:e} device_max_abs={:e}",
+            "measurement-effect kind={} passes={} cpu_ms={cpu_ms:.3} gpu_ms={gpu_ms:.3} gpu_max_abs={error:e}",
             row.0,
             passes.len(),
-            errors[1],
-            errors[2]
         );
     }
     drop(input);

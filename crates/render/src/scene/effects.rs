@@ -920,11 +920,6 @@ enum Wgsl {
     Entry,
     /// A shader entry that also reads one more image.
     Reads(ReadImage),
-    /// A shader entry (reading the current image and the image given, if any)
-    /// whose parity with the CPU reference is not yet within 2e-5 on the host
-    /// adapter. Adapters build it but do not report it supported, so the run
-    /// splitter keeps it on the CPU; only parity measurement runs it.
-    Unproven(Option<ReadImage>),
 }
 /// How the CPU runs an op. The shader side is [`Wgsl`].
 #[derive(Clone, Copy)]
@@ -1239,21 +1234,16 @@ pub struct ShaderEntry {
     pub name: &'static str,
     /// The image it binds besides the current one.
     pub reads: Option<ReadImage>,
-    /// Parity with the CPU reference is proven within 2e-5 on the host adapter;
-    /// an adapter runs an unproven entry only to measure it.
-    pub proven: bool,
 }
 fn shader_entry_of(op: &EffectOp) -> Option<ShaderEntry> {
-    let (reads, proven) = match op.wgsl {
+    let reads = match op.wgsl {
         Wgsl::Absent => return None,
-        Wgsl::Entry => (None, true),
-        Wgsl::Reads(image) => (Some(image), true),
-        Wgsl::Unproven(reads) => (reads, false),
+        Wgsl::Entry => None,
+        Wgsl::Reads(image) => Some(image),
     };
     Some(ShaderEntry {
         name: op.entry_point,
         reads,
-        proven,
     })
 }
 /// Whether a per-pixel shader entry computes `pass` as the CPU does on a
@@ -1621,7 +1611,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "pixelate",
-        wgsl: Wgsl::Unproven(Some(ReadImage::Instance)),
+        wgsl: Wgsl::Reads(ReadImage::Instance),
         kernel: Kernel::Sample(SampleOp {
             len: 3,
             valid: |v, _, _| {
@@ -1762,7 +1752,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "twirl",
-        wgsl: Wgsl::Entry,
+        wgsl: Wgsl::Absent,
         kernel: Kernel::Sample(SampleOp {
             len: 4,
             valid: whole_image::valid_twirl,
@@ -1772,7 +1762,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "spherize",
-        wgsl: Wgsl::Entry,
+        wgsl: Wgsl::Absent,
         kernel: Kernel::Sample(SampleOp {
             len: 3,
             valid: whole_image::valid_spherize,
@@ -1792,7 +1782,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "wave_warp",
-        wgsl: Wgsl::Entry,
+        wgsl: Wgsl::Absent,
         kernel: Kernel::Sample(SampleOp {
             len: 4,
             valid: whole_image::valid_wave,
@@ -1802,7 +1792,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "lens_distortion",
-        wgsl: Wgsl::Entry,
+        wgsl: Wgsl::Absent,
         kernel: Kernel::Sample(SampleOp {
             len: 4,
             valid: whole_image::valid_lens,
@@ -1812,7 +1802,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "turbulent_displace",
-        wgsl: Wgsl::Entry,
+        wgsl: Wgsl::Absent,
         kernel: Kernel::Sample(SampleOp {
             len: 8,
             valid: whole_image::valid_turbulent,
@@ -1822,7 +1812,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "corner_pin",
-        wgsl: Wgsl::Reads(ReadImage::Instance),
+        wgsl: Wgsl::Absent,
         kernel: Kernel::Sample(SampleOp {
             len: 11,
             valid: whole_image::valid_corner,
@@ -1832,7 +1822,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "basic_3d",
-        wgsl: Wgsl::Reads(ReadImage::Instance),
+        wgsl: Wgsl::Absent,
         kernel: Kernel::Sample(SampleOp {
             len: 6,
             valid: whole_image::valid_basic_3d,
@@ -1862,7 +1852,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "camera_shake",
-        wgsl: Wgsl::Reads(ReadImage::Instance),
+        wgsl: Wgsl::Absent,
         kernel: Kernel::Sample(SampleOp {
             len: 4,
             valid: whole_image::valid_shake,
@@ -1892,7 +1882,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "glint_rays",
-        wgsl: Wgsl::Unproven(Some(ReadImage::Instance)),
+        wgsl: Wgsl::Reads(ReadImage::Instance),
         kernel: Kernel::Sample(SampleOp {
             len: 9,
             valid: whole_image::valid_glint,
@@ -1952,7 +1942,7 @@ static OPS: &[EffectOp] = &[
     },
     EffectOp {
         entry_point: "long_shadow",
-        wgsl: Wgsl::Unproven(Some(ReadImage::Instance)),
+        wgsl: Wgsl::Reads(ReadImage::Instance),
         kernel: Kernel::Sample(SampleOp {
             len: 10,
             valid: whole_image::valid_long,

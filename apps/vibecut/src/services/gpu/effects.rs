@@ -73,8 +73,6 @@ pub struct GpuEffects {
     pipelines: BTreeMap<&'static str, wgpu::ComputePipeline>,
     busy: Arc<AtomicBool>,
     work: Work,
-    /// Parity measurement: also run entries whose CPU parity is unproven.
-    unproven: bool,
 }
 impl GpuEffects {
     /// Snapshot of the native work counters.
@@ -96,18 +94,7 @@ impl GpuEffects {
         engine::effect_thumbnails::EffectThumbnails::new(self.clone(), budget)
     }
 
-    /// The production adapter: it runs only entries whose parity is proven.
     pub async fn new(device: wgpu::Device, queue: wgpu::Queue) -> Result<Self> {
-        Self::build(device, queue, false).await
-    }
-
-    /// Parity measurement only: the same pipelines, but entries whose parity with
-    /// the CPU reference is unproven also run, so their error can be measured.
-    pub async fn measuring(device: wgpu::Device, queue: wgpu::Queue) -> Result<Self> {
-        Self::build(device, queue, true).await
-    }
-
-    async fn build(device: wgpu::Device, queue: wgpu::Queue, unproven: bool) -> Result<Self> {
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let entries: Vec<_> = (0..7)
             .map(|binding| wgpu::BindGroupLayoutEntry {
@@ -162,7 +149,6 @@ impl GpuEffects {
             pipelines,
             busy: Arc::new(AtomicBool::new(false)),
             work: Work::default(),
-            unproven,
         })
     }
     fn open<'a>(&'a self, hooks: &'a dyn ExecutionHooks) -> Result<FrameEffects<'a>> {
@@ -826,8 +812,7 @@ impl EffectCompositor for GpuEffects {
         Ok(())
     }
     fn supports(&self, entry: &str) -> bool {
-        self.pipelines.contains_key(entry)
-            && shader_entry(entry).is_some_and(|entry| entry.proven || self.unproven)
+        self.pipelines.contains_key(entry) && read_image(entry).is_ok()
     }
     fn apply(
         &self,
