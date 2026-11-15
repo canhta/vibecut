@@ -1916,7 +1916,10 @@ fn frames_of(dialog: &super::ExportDialog) -> Vec<Vec<u8>> {
         .map(|entry| entry.unwrap().path())
         .collect();
     files.sort();
-    files.iter().map(|path| std::fs::read(path).unwrap()).collect()
+    files
+        .iter()
+        .map(|path| std::fs::read(path).unwrap())
+        .collect()
 }
 
 /// Fails if export keeps `effects=None` after the adapter is lent, or if lending an

@@ -1089,9 +1089,7 @@ fn export() {
     // The 355 gate: the lent adapter stays wired to desktop export only while it
     // completes faster than CPU under the same budget and encoder, within 2e-5.
     let passed = outcome.as_ref().is_ok_and(|seconds| *seconds < cpu);
-    println!(
-        "EXPORT_GATE cpu_s={cpu:.3} gpu={outcome:?} parity_max_abs={max:e} passed={passed}"
-    );
+    println!("EXPORT_GATE cpu_s={cpu:.3} gpu={outcome:?} parity_max_abs={max:e} passed={passed}");
     let hooks = Hooks::budgeted();
     hooks.cancel.store(true, Ordering::Relaxed);
     let cancelled = testkit::fixture::dir("gpu-path").join("cancelled.mp4");
