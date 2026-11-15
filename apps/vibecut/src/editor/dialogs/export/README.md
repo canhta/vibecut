@@ -81,6 +81,12 @@ than the CPU one. A `passed=false` run on a native host (Vulkan or Metal) means 
 lander removes the export line from `Editor::set_effects` and export stays on the CPU;
 the decision is that measurement, never an adapter or hardware name.
 
+Measured 2026-11-15 (release, Windows, Vulkan integrated GPU): CPU 307.6 s (5.85 fps),
+adapter 163.5 s (11.01 fps), 1800 of 1800 frames on the device with no `Unsupported`,
+`Budget` or other fallback, parity max_abs 9.6e-7, both outputs 1800 decoded frames
+and 60 s within one frame, logical budget peak 508 MB of 768 MiB: `passed=true`, so
+the lending stays.
+
 On completion the app opens the asynchronous native save dialog with the sanitized
 `<ProjectName>.<ext>` and last save directory. Filenames keep Unicode and spaces,
 replace invalid filesystem characters, trim trailing dots and spaces and escape
