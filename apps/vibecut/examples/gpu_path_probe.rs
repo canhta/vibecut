@@ -6,13 +6,16 @@
 //! `cargo xtask build -- cargo run --release -p vibecut --example gpu_path_probe -- <mode>`
 //!   transfer  per-frame upload/readback and pass timing at 1080p and 4K
 //!   export    60 s 1080p timeline with a three-effect stack: CPU vs lent GPU
-//!   frames    render-only cost of the same timeline, CPU vs GPU
+//!   frames    render-only cost of the same timeline, CPU vs GPU, plain and masked
+//!
+//! `transfer` also times the 1080p three-effect item as one resident two-layer
+//! frame (`RESIDENT_*` lines), CPU reference vs device, with and without coverage.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 
 use eframe::wgpu;
 use render::effects::{
-    CpuEffects, EffectCompositor, EffectGeometry, EffectInputs, EffectPass, evaluate_effect,
-    grade_passes,
+    CpuEffects, EffectCompositor, EffectGeometry, EffectInputs, EffectPass, FrameLayer,
+    composite_layers, evaluate_effect, grade_passes, reference_layers,
 };
 use render::{
     Error, ExecutionHooks, ExportMode, ExportSettings, FileSources, Image, MemoryKind,
@@ -26,7 +29,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use vibecut::services::gpu::effects::GpuEffects;
+use vibecut::services::gpu::effects::{GpuEffects, GpuWork};
 use wgpu::util::DeviceExt;
 
 /// Mirrors engine's `JobContext` hooks: eight pixel workers, scoped threads,
@@ -140,9 +143,11 @@ struct Counted {
     gpu: GpuEffects,
     apply: [AtomicU64; 4],
     composite: [AtomicU64; 4],
+    layers: [AtomicU64; 4],
     unsupported_queries: AtomicU64,
     frames: [AtomicU64; 4],
     idle: AtomicU64,
+    work: Mutex<GpuWork>,
 }
 impl Counted {
     fn new(device: wgpu::Device, queue: wgpu::Queue) -> Arc<Self> {
@@ -150,9 +155,11 @@ impl Counted {
             gpu: pollster::block_on(GpuEffects::new(device, queue)).unwrap(),
             apply: Default::default(),
             composite: Default::default(),
+            layers: Default::default(),
             unsupported_queries: AtomicU64::new(0),
             frames: Default::default(),
             idle: AtomicU64::new(0),
+            work: Mutex::default(),
         })
     }
     fn report(&self, label: &str) {
@@ -177,6 +184,20 @@ impl Counted {
             c[2],
             c[3],
             self.unsupported_queries.swap(0, Ordering::Relaxed)
+        );
+        let l = self.layers.each_ref().map(|n| n.swap(0, Ordering::Relaxed));
+        let now = self.gpu.work();
+        let last = std::mem::replace(&mut *self.work.lock().unwrap(), now);
+        println!(
+            "GPU_WORK {label} layers_ok={} layers_unsupported={} layers_budget={} layers_other={} uploads={} dispatches={} submissions={} readbacks={}",
+            l[0],
+            l[1],
+            l[2],
+            l[3],
+            now.image_uploads - last.image_uploads,
+            now.dispatches - last.dispatches,
+            now.submissions - last.submissions,
+            now.readbacks - last.readbacks
         );
     }
     fn record<T>(counts: &[AtomicU64; 4], result: &Result<T>) {
@@ -235,6 +256,17 @@ impl EffectCompositor for Counted {
         Self::record(&self.composite, &result);
         result
     }
+    fn composite_layers(
+        &self,
+        width: u32,
+        height: u32,
+        layers: &[FrameLayer<'_>],
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Image> {
+        let result = self.gpu.composite_layers(width, height, layers, hooks);
+        Self::record(&self.layers, &result);
+        result
+    }
 }
 
 struct CountedFrame<'a> {
@@ -282,6 +314,17 @@ impl EffectCompositor for CountedFrame<'_> {
     ) -> Result<()> {
         let result = self.frame.composite(below, image, opacity, mode, hooks);
         Counted::record(&self.owner.composite, &result);
+        result
+    }
+    fn composite_layers(
+        &self,
+        width: u32,
+        height: u32,
+        layers: &[FrameLayer<'_>],
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Image> {
+        let result = self.frame.composite_layers(width, height, layers, hooks);
+        Counted::record(&self.owner.layers, &result);
         result
     }
 }
@@ -610,10 +653,107 @@ fn transfer() {
             gpu.report(&format!("transfer {w}x{h} effects={n} warm=2 measured=7"));
         }
     }
+    resident_frame(&gpu, &hooks);
     println!("PEAK_WORKING_SET {}", peak());
 }
 
-fn project_at(path: &std::path::Path, effects: Vec<project::EffectInstance>) -> project::Project {
+/// The 1080p three-effect item over an opaque backdrop as one resident two-layer
+/// frame: CPU reference and device alternate per repetition, so timings never
+/// overlap, on identical inputs, plain and with a prepared feathered split coverage
+/// (one more upload). Resident bytes are one device frame's peak under the shared
+/// budget with its inputs held outside it; a refusal is reported, never widened.
+fn resident_frame(gpu: &Counted, hooks: &Hooks) {
+    let (w, h) = (1920u32, 1080u32);
+    let backdrop = Image::new(w, h, [0.05, 0.1, 0.2, 1.0], hooks).unwrap();
+    let top = image(w, h, hooks);
+    let item = item(stack(3));
+    let runs: Vec<Vec<EffectPass>> = item
+        .effects
+        .iter()
+        .map(|effect| {
+            evaluate_effect(
+                &item.animations,
+                effect,
+                time::Tick::ZERO,
+                EffectGeometry::new([w, h], [1.0, 1.0]).unwrap(),
+                true,
+                &Default::default(),
+            )
+            .unwrap()
+        })
+        .collect();
+    let coverage = render::mask::SplitMask {
+        center: [960.0, 540.0],
+        normal: [0.6, 0.8],
+        feather: 48.0,
+        expansion: 0.0,
+        opacity: 1.0,
+        inverted: false,
+    }
+    .coverage(w, h, hooks)
+    .unwrap();
+    gpu.report("resident_frame_start");
+    for (label, coverage) in [("none", None), ("split", Some(&coverage))] {
+        let normal = project::BlendMode::Normal;
+        let layers = [
+            FrameLayer {
+                image: &backdrop,
+                opacity: 1.0,
+                mode: normal,
+                effects: &[],
+                coverage: None,
+            },
+            FrameLayer {
+                image: &top,
+                opacity: 0.8,
+                mode: normal,
+                effects: &runs,
+                coverage,
+            },
+        ];
+        let mut cpu = Stats::new(format!("cpu_frame {w}x{h} effects=3 coverage={label}"));
+        let mut device = Stats::new(format!("gpu_frame {w}x{h} effects=3 coverage={label}"));
+        let (mut max, mut failed) = (0.0f32, 0usize);
+        for i in 0..9 {
+            let a = time(&mut cpu, || reference_layers(w, h, &layers, hooks).unwrap());
+            let b = time(&mut device, || {
+                composite_layers(w, h, &layers, gpu, hooks).unwrap()
+            });
+            let (m, f) = parity(&a, &b);
+            max = max.max(m);
+            failed += f;
+            if i < 2 {
+                cpu.samples.clear();
+                device.samples.clear();
+            }
+        }
+        cpu.report("warm=2");
+        device.report("warm=2");
+        gpu.report(&format!("resident_frame {w}x{h} coverage={label} frames=9"));
+        println!(
+            "RESIDENT_PARITY coverage={label} max_abs={max:e} over_tolerance={failed} tolerance=2e-5"
+        );
+        let budgeted = Hooks::budgeted();
+        match composite_layers(w, h, &layers, gpu, &budgeted) {
+            Ok(out) => drop(out),
+            Err(error) => println!("RESIDENT_REFUSAL coverage={label} error={error:?}"),
+        }
+        println!(
+            "RESIDENT_BYTES coverage={label} observed_logical_peak={} image_bytes={}",
+            budgeted.peak.load(Ordering::Relaxed),
+            Image::bytes(w, h).unwrap()
+        );
+        budgeted.drained();
+        gpu.report(&format!("resident_bytes coverage={label}"));
+        assert_eq!(failed, 0, "GPU disagrees: CPU wins");
+    }
+}
+
+fn project_at(
+    path: &std::path::Path,
+    effects: Vec<project::EffectInstance>,
+    masks: Vec<project::Mask>,
+) -> project::Project {
     let asset = media::SourceAsset::import(media::AssetId(1), path.to_owned()).unwrap();
     let mut d = project::Project::empty(project::ProjectId(0), "gpu-probe".into())
         .unwrap()
@@ -639,7 +779,7 @@ fn project_at(path: &std::path::Path, effects: Vec<project::EffectInstance>) -> 
         blend_mode: Default::default(),
         group: None,
         retime: Default::default(),
-        masks: Vec::new(),
+        masks,
         effects,
         animations: Default::default(),
         id: project::ItemId(0),
@@ -798,14 +938,15 @@ fn frames() {
     let ticks: Vec<_> = (0..60)
         .map(|n| time::FrameRate::FPS_30.tick_of(n).unwrap())
         .collect();
-    for n in [0usize, 3] {
-        let p = project_at(&path, stack(n));
+    for (n, masks) in [(0usize, Vec::new()), (3, Vec::new()), (3, masks())] {
+        let mask = if masks.is_empty() { "none" } else { "ellipse" };
+        let p = project_at(&path, stack(n), masks);
         for (label, adapter) in [
             ("cpu", None),
             ("gpu", Some(gpu.clone() as Arc<dyn EffectCompositor>)),
         ] {
             let mut stats = Stats::new(format!(
-                "frames effects={n} adapter={label} frames_per_rep=60"
+                "frames effects={n} mask={mask} adapter={label} frames_per_rep=60"
             ));
             for rep in 0..3 {
                 let mut settings = RenderSettings::from_project(&p);
@@ -818,39 +959,51 @@ fn frames() {
                 }
                 stats.push(start.elapsed());
                 println!(
-                    "FRAME_REP effects={n} adapter={label} rep={rep} elapsed_ms={:.3}",
+                    "FRAME_REP effects={n} mask={mask} adapter={label} rep={rep} elapsed_ms={:.3}",
                     start.elapsed().as_secs_f64() * 1e3
                 );
             }
             stats.report(&format!("warmup=0 fps={:.3}", 60000.0 / stats.median()));
-            gpu.report(&format!("frames effects={n} adapter={label}"));
+            gpu.report(&format!("frames effects={n} mask={mask} adapter={label}"));
         }
     }
-    let p = project_at(&path, stack(3));
-    let mut settings = RenderSettings::from_project(&p);
-    let mut cpu = Renderer::new(&p, settings.clone()).unwrap();
-    settings.effects = Some(gpu.clone());
-    let mut device = Renderer::new(&p, settings).unwrap();
-    let (mut sa, mut sb) = (FileSources::default(), FileSources::default());
-    let (mut max, mut failed) = (0.0f32, 0usize);
-    for &t in ticks.iter().step_by(10) {
-        let a = cpu.render_frame(t, &mut sa, &hooks).unwrap();
-        let b = device.render_frame(t, &mut sb, &hooks).unwrap();
-        let (m, f) = parity(&a, &b);
-        max = max.max(m);
-        failed += f;
-        println!("PARITY_FRAME tick={} max_abs={m:e} over_2e5={f}", t.0);
+    for (mask, masks) in [("none", Vec::new()), ("ellipse", masks())] {
+        let p = project_at(&path, stack(3), masks);
+        let mut settings = RenderSettings::from_project(&p);
+        let mut cpu = Renderer::new(&p, settings.clone()).unwrap();
+        settings.effects = Some(gpu.clone());
+        let mut device = Renderer::new(&p, settings).unwrap();
+        let (mut sa, mut sb) = (FileSources::default(), FileSources::default());
+        let (mut max, mut failed) = (0.0f32, 0usize);
+        for &t in ticks.iter().step_by(10) {
+            let a = cpu.render_frame(t, &mut sa, &hooks).unwrap();
+            let b = device.render_frame(t, &mut sb, &hooks).unwrap();
+            let (m, f) = parity(&a, &b);
+            max = max.max(m);
+            failed += f;
+            println!(
+                "PARITY_FRAME mask={mask} tick={} max_abs={m:e} over_2e5={f}",
+                t.0
+            );
+        }
+        println!(
+            "PARITY mask={mask} ticks=6 channels={} max_abs={max:e} over_tolerance={failed} tolerance=2e-5 cpu_is_reference=true",
+            6usize * 1920 * 1080 * 4
+        );
+        gpu.report(&format!("frame_parity mask={mask}"));
+        assert_eq!(failed, 0, "GPU disagrees: CPU wins");
+        drop((cpu, device, sa, sb));
     }
-    println!(
-        "PARITY ticks=6 channels={} max_abs={max:e} over_tolerance={failed} tolerance=2e-5 cpu_is_reference=true",
-        6usize * 1920 * 1080 * 4
-    );
-    gpu.report("frame_parity");
-    assert_eq!(failed, 0, "GPU disagrees: CPU wins");
-    drop((cpu, device, sa, sb));
     safety(&gpu);
     hooks.drained();
     println!("PEAK_WORKING_SET {}", peak());
+}
+
+/// One feathered ellipse clip mask: the prepared-coverage frame workload.
+fn masks() -> Vec<project::Mask> {
+    let mut mask = project::Mask::new("ellipse", project::MaskShape::Ellipse);
+    mask.feather = 40.0;
+    vec![mask]
 }
 
 fn safety(gpu: &Counted) {
@@ -907,7 +1060,7 @@ fn export() {
     info(&adapter);
     let gpu = Counted::new(device, queue);
     let path = fixture();
-    let base = project_at(&path, Vec::new());
+    let base = project_at(&path, Vec::new(), Vec::new());
     println!(
         "TIMELINE source={} duration_s={:.1} canvas={}x{} fps={:?} items=1 effects=3",
         path.display(),
@@ -918,7 +1071,7 @@ fn export() {
     );
     export_run("1080p_60s_no_effects_cpu", &base, None, "no-effects").unwrap();
     gpu.report("export_cpu_floor");
-    let p = project_at(&path, stack(3));
+    let p = project_at(&path, stack(3), Vec::new());
     export_run("1080p_60s_3effects_cpu", &p, None, "cpu").unwrap();
     gpu.report("export_cpu_3effects");
     let outcome = export_run("1080p_60s_3effects_gpu", &p, Some(gpu.clone()), "gpu");

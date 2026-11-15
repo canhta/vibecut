@@ -23,6 +23,19 @@ struct ComputePass<'a> {
     entry_point: &'static str,
     horizontal: bool,
     values: Cow<'a, [f32]>,
+    /// Copy the evolving image into the resident instance checkpoint first: this
+    /// pass starts an effect instance whose sample passes read its input.
+    checkpoint: bool,
+}
+/// What one submission binds besides the evolving image.
+#[derive(Clone, Copy)]
+struct Bindings<'i> {
+    /// An uploaded snapshot and the read it serves.
+    aux: Option<(ReadImage, &'i Image)>,
+    /// Prepared coverage the blend pass multiplies into its source.
+    coverage: Option<&'i Image>,
+    /// Instance reads use the device-filled checkpoint instead of an upload.
+    checkpoint: bool,
 }
 
 /// The extra image an entry binds, from the render crate's effect description.
@@ -157,7 +170,8 @@ impl GpuEffects {
             + std::mem::size_of::<Flight>()
             + std::mem::size_of::<Scratch>()
             + std::mem::size_of::<Core>()
-            + std::mem::size_of::<Aux>()
+            + 2 * std::mem::size_of::<Aux>()
+            + std::mem::size_of::<Checkpoint>()
             + std::mem::size_of::<Metadata>();
         if records > 4096 {
             return Err(Error::Unsupported("GPU scope records"));
@@ -197,6 +211,11 @@ struct Aux {
     upload: wgpu::Buffer,
     _lease: Box<dyn render::Reservation>,
 }
+/// Device-only copy of the evolving image at an effect instance's start.
+struct Checkpoint {
+    data: wgpu::Buffer,
+    _lease: Box<dyn render::Reservation>,
+}
 struct Metadata {
     slots: Box<[(wgpu::Buffer, wgpu::Buffer)]>,
     upload: wgpu::Buffer,
@@ -206,6 +225,8 @@ struct Metadata {
 struct Scratch {
     core: Option<Arc<Core>>,
     aux: Option<Arc<Aux>>,
+    coverage: Option<Arc<Aux>>,
+    checkpoint: Option<Arc<Checkpoint>>,
     meta: Option<Arc<Metadata>>,
 }
 #[derive(Default)]
@@ -269,7 +290,10 @@ impl Drop for Mappings<'_> {
             }
         }
         if !self.ready {
-            if let Some(aux) = &self.scratch.aux {
+            for aux in [&self.scratch.aux, &self.scratch.coverage]
+                .into_iter()
+                .flatten()
+            {
                 aux.upload.unmap();
             }
             if let Some(meta) = &self.scratch.meta {
@@ -313,11 +337,20 @@ impl FrameEffects<'_> {
         &self,
         item: &Image,
         passes: impl ExactSizeIterator<Item = ComputePass<'p>> + Clone,
-        inputs: EffectInputs<'_>,
+        bindings: Bindings<'_>,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Image> {
         self.hooks(hooks)?;
-        inputs.validate(item)?;
+        for image in bindings
+            .aux
+            .map(|(_, image)| image)
+            .into_iter()
+            .chain(bindings.coverage)
+        {
+            if (image.width(), image.height()) != (item.width(), item.height()) {
+                return Err(Error::Invalid("effect input dimensions"));
+            }
+        }
         let bytes = Image::bytes(item.width(), item.height())?;
         let limits = self.gpu.device.limits();
         if bytes > limits.max_storage_buffer_binding_size
@@ -330,16 +363,18 @@ impl FrameEffects<'_> {
         if passes.len() > 512 {
             return Err(Error::Unsupported("GPU pass capacity"));
         }
-        let mut read = None;
         for pass in passes.clone() {
             if !self.gpu.supports(pass.entry_point) || pass.values.len() > 49 {
                 return Err(Error::Unsupported("GPU shader entry"));
             }
-            if let Some(next) = read_image(pass.entry_point)? {
-                if read.is_some_and(|previous| previous != next) {
-                    return Err(Error::Unsupported("GPU auxiliary inputs"));
-                }
-                read = Some(next);
+            match read_image(pass.entry_point)? {
+                None => {}
+                Some(read) if bindings.aux.is_some_and(|(aux, _)| aux == read) => {}
+                Some(ReadImage::Instance) if bindings.checkpoint => {}
+                Some(_) => return Err(Error::Unsupported("GPU auxiliary inputs")),
+            }
+            if pass.checkpoint && !bindings.checkpoint {
+                return Err(Error::Invalid("GPU checkpoint"));
             }
         }
         let mut scratch = {
@@ -371,15 +406,7 @@ impl FrameEffects<'_> {
             .device
             .push_error_scope(wgpu::ErrorFilter::Internal);
         let mut submitted = false;
-        let result = self.run(
-            item,
-            passes,
-            inputs,
-            read,
-            bytes,
-            &mut scratch,
-            &mut submitted,
-        );
+        let result = self.run(item, passes, bindings, bytes, &mut scratch, &mut submitted);
         let failed = pollster::block_on(internal.pop()).is_some();
         #[cfg(test)]
         let failed = failed
@@ -414,13 +441,11 @@ impl FrameEffects<'_> {
         }
         result
     }
-    #[allow(clippy::too_many_arguments)]
     fn run<'p>(
         &self,
         item: &Image,
         passes: impl ExactSizeIterator<Item = ComputePass<'p>> + Clone,
-        inputs: EffectInputs<'_>,
-        read: Option<ReadImage>,
+        bindings: Bindings<'_>,
         bytes: u64,
         scratch: &mut Scratch,
         submitted: &mut bool,
@@ -441,19 +466,32 @@ impl FrameEffects<'_> {
         } else {
             None
         };
-        if read.is_none() {
+        if bindings.aux.is_none() {
             scratch.aux = None;
         }
-        let aux_new = read.is_some() && scratch.aux.is_none();
-        let aux_lease = if aux_new {
-            Some(
-                self.hooks.reserve(
-                    MemoryKind::Compositor,
-                    bytes
-                        .checked_mul(2)
-                        .ok_or(Error::Invalid("GPU auxiliary bytes"))?,
-                )?,
+        if bindings.coverage.is_none() {
+            scratch.coverage = None;
+        }
+        if !bindings.checkpoint {
+            scratch.checkpoint = None;
+        }
+        let pair = || {
+            self.hooks.reserve(
+                MemoryKind::Compositor,
+                bytes
+                    .checked_mul(2)
+                    .ok_or(Error::Invalid("GPU auxiliary bytes"))?,
             )
+        };
+        let aux_new = bindings.aux.is_some() && scratch.aux.is_none();
+        let aux_lease = if aux_new { Some(pair()?) } else { None };
+        let checkpoint_lease = if bindings.checkpoint && scratch.checkpoint.is_none() {
+            Some(self.hooks.reserve(MemoryKind::Compositor, bytes)?)
+        } else {
+            None
+        };
+        let coverage_lease = if bindings.coverage.is_some() && scratch.coverage.is_none() {
+            Some(pair()?)
         } else {
             None
         };
@@ -466,10 +504,22 @@ impl FrameEffects<'_> {
                 _lease: lease,
             }));
         }
-        if let Some(lease) = aux_lease {
-            scratch.aux = Some(Arc::new(Aux {
+        let aux = |lease| {
+            Arc::new(Aux {
                 data: self.buffer(bytes, U::STORAGE | U::COPY_DST, false),
                 upload: self.buffer(bytes, U::MAP_WRITE | U::COPY_SRC, true),
+                _lease: lease,
+            })
+        };
+        if let Some(lease) = aux_lease {
+            scratch.aux = Some(aux(lease));
+        }
+        if let Some(lease) = coverage_lease {
+            scratch.coverage = Some(aux(lease));
+        }
+        if let Some(lease) = checkpoint_lease {
+            scratch.checkpoint = Some(Arc::new(Checkpoint {
+                data: self.buffer(bytes, U::STORAGE | U::COPY_DST, false),
                 _lease: lease,
             }));
         }
@@ -516,20 +566,20 @@ impl FrameEffects<'_> {
             ready: false,
         };
         self.pack(item, &core.upload)?;
-        if let Some(aux) = &scratch.aux {
-            self.pack(
-                if read == Some(ReadImage::Instance) {
-                    inputs.input
-                } else {
-                    inputs.below
-                },
-                &aux.upload,
-            )?;
+        let mut uploads = 1;
+        for (buffer, image) in [
+            (&scratch.aux, bindings.aux.map(|(_, image)| image)),
+            (&scratch.coverage, bindings.coverage),
+        ] {
+            if let (Some(buffer), Some(image)) = (buffer, image) {
+                self.pack(image, &buffer.upload)?;
+                uploads += 1;
+            }
         }
         self.gpu
             .work
             .image_uploads
-            .fetch_add(1 + u64::from(scratch.aux.is_some()), Ordering::Relaxed);
+            .fetch_add(uploads, Ordering::Relaxed);
         let mut data = meta
             .upload
             .slice(..)
@@ -557,7 +607,7 @@ impl FrameEffects<'_> {
         meta.upload.unmap();
         let mut encoder = self.gpu.device.create_command_encoder(&Default::default());
         encoder.copy_buffer_to_buffer(&core.upload, 0, &core.a, 0, bytes);
-        if let Some(aux) = &scratch.aux {
+        for aux in [&scratch.aux, &scratch.coverage].into_iter().flatten() {
             encoder.copy_buffer_to_buffer(&aux.upload, 0, &aux.data, 0, bytes);
         }
         let mut a = &core.a;
@@ -572,32 +622,37 @@ impl FrameEffects<'_> {
                 .ok_or(Error::Invalid("GPU pass slot"))?;
             encoder.copy_buffer_to_buffer(&meta.upload, index as u64 * 212, params, 0, 16);
             encoder.copy_buffer_to_buffer(&meta.upload, index as u64 * 212 + 16, weights, 0, 196);
+            if pass.checkpoint {
+                let checkpoint = scratch
+                    .checkpoint
+                    .as_ref()
+                    .ok_or(Error::Invalid("GPU checkpoint"))?;
+                encoder.copy_buffer_to_buffer(a, 0, &checkpoint.data, 0, bytes);
+            }
             let read = read_image(pass.entry_point)?;
-            let auxiliary = scratch.aux.as_ref().map_or(a, |aux| &aux.data);
-            let entries = [
-                a,
-                b,
-                weights,
-                params,
-                a,
-                if read == Some(ReadImage::Below) {
-                    auxiliary
-                } else {
-                    a
-                },
-                if read == Some(ReadImage::Instance) {
-                    auxiliary
-                } else {
-                    a
-                },
-            ]
-            .into_iter()
-            .enumerate()
-            .map(|(binding, buffer)| wgpu::BindGroupEntry {
-                binding: binding as u32,
-                resource: buffer.as_entire_binding(),
-            })
-            .collect::<Vec<_>>();
+            // Each read binds its own image; unused read-only bindings follow `a`.
+            let uploaded = match (read, bindings.aux, &scratch.aux) {
+                (Some(want), Some((served, _)), Some(aux)) if want == served => Some(&aux.data),
+                _ => None,
+            };
+            let below = match read {
+                Some(ReadImage::Below) => uploaded.unwrap_or(a),
+                _ => a,
+            };
+            let instance = match (read, &scratch.checkpoint) {
+                (Some(ReadImage::Instance), Some(checkpoint)) => &checkpoint.data,
+                (Some(ReadImage::Instance), None) => uploaded.unwrap_or(a),
+                _ => a,
+            };
+            let coverage = scratch.coverage.as_ref().map_or(a, |aux| &aux.data);
+            let entries = [a, b, weights, params, coverage, below, instance]
+                .into_iter()
+                .enumerate()
+                .map(|(binding, buffer)| wgpu::BindGroupEntry {
+                    binding: binding as u32,
+                    resource: buffer.as_entire_binding(),
+                })
+                .collect::<Vec<_>>();
             let group = self
                 .gpu
                 .device
@@ -639,12 +694,16 @@ impl FrameEffects<'_> {
         if let Some(boundary) = &self.boundary {
             boundary.after_submit();
         }
-        let (tx, rx) = mpsc::sync_channel(4);
+        let (tx, rx) = mpsc::sync_channel(5);
         let buffers = [
             Some((&core.download, wgpu::MapMode::Read)),
             Some((&core.upload, wgpu::MapMode::Write)),
             scratch
                 .aux
+                .as_ref()
+                .map(|aux| (&aux.upload, wgpu::MapMode::Write)),
+            scratch
+                .coverage
                 .as_ref()
                 .map(|aux| (&aux.upload, wgpu::MapMode::Write)),
             Some((&meta.upload, wgpu::MapMode::Write)),
@@ -684,7 +743,8 @@ impl FrameEffects<'_> {
             core_new,
             aux_new,
             meta_new,
-            image_uploads = if read.is_some() { 2 } else { 1 },
+            image_uploads = uploads,
+            checkpoint = bindings.checkpoint,
             "GPU scratch submission"
         );
         self.gpu
@@ -804,26 +864,42 @@ impl EffectCompositor for GpuEffects {
             return Err(Error::Cancelled);
         }
         render::effects::validate_layers(width, height, layers)?;
-        admitted_pair(layers)?;
+        admitted_pair(width, height, layers)?;
         self.open(hooks)?
             .composite_layers(width, height, layers, hooks)
     }
 }
-/// The first resident case: a full-canvas opaque Normal backdrop under one Normal
-/// layer. Anything else is declined before any device work and runs on the CPU.
+/// The resident case: a full-canvas opaque Normal backdrop, with no effects or
+/// coverage, under one Normal layer whose effect instances use only resident
+/// entries and whose optional prepared coverage scales it before source-over.
+/// Anything else is declined before any device work and runs on the CPU.
 fn admitted_pair<'a, 'l>(
+    width: u32,
+    height: u32,
     layers: &'l [FrameLayer<'a>],
 ) -> Result<(&'l FrameLayer<'a>, &'l FrameLayer<'a>)> {
     match layers {
         [base, top]
             if base.mode == project::BlendMode::Normal
                 && base.opacity == 1.0
-                && top.mode == project::BlendMode::Normal =>
+                && base.coverage.is_none()
+                && base.effects.iter().all(Vec::is_empty)
+                && top.mode == project::BlendMode::Normal
+                && render::effects::resident(top.effects, width, height) =>
         {
             Ok((base, top))
         }
         _ => Err(Error::Unsupported("GPU frame layers")),
     }
+}
+/// Whether a pass of this effect instance samples the instance's own input.
+fn reads_instance(run: &[EffectPass]) -> bool {
+    run.iter().any(|pass| {
+        matches!(
+            read_image(pass.entry_point()),
+            Ok(Some(ReadImage::Instance))
+        )
+    })
 }
 impl EffectCompositor for FrameEffects<'_> {
     fn frame<'a>(
@@ -861,19 +937,20 @@ impl EffectCompositor for FrameEffects<'_> {
         if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
             return Err(Error::Invalid("GPU blend opacity"));
         }
-        let values = [opacity, mode as u32 as f32];
+        let values = [opacity, mode as u32 as f32, 0.0];
         let pass = ComputePass {
             entry_point: BLEND_ENTRY,
             horizontal: false,
             values: Cow::Borrowed(&values),
+            checkpoint: false,
         };
         let result = self.execute(
             item,
             std::iter::once(pass),
-            EffectInputs {
-                input: item,
+            Bindings {
+                aux: Some((ReadImage::Below, below)),
                 coverage: None,
-                below,
+                checkpoint: false,
             },
             hooks,
         )?;
@@ -889,21 +966,48 @@ impl EffectCompositor for FrameEffects<'_> {
     ) -> Result<Image> {
         self.hooks(hooks)?;
         render::effects::validate_layers(width, height, layers)?;
-        let (base, top) = admitted_pair(layers)?;
-        // Both prepared CPU images are borrowed from their owners for the whole call,
-        // so a runtime Unsupported leaves exactly these inputs for the CPU recompute.
-        let values = [top.opacity, project::BlendMode::Normal as u32 as f32];
+        let (base, top) = admitted_pair(width, height, layers)?;
+        // Every prepared CPU image is borrowed from its owner for the whole call, so a
+        // runtime Unsupported leaves exactly these inputs for the CPU recompute. The
+        // instances run in order on the device, each sample pass reading the checkpoint
+        // its instance started from, then the blend multiplies in any coverage; only
+        // the final image is read back.
+        let instances = || top.effects.iter().filter(|run| !run.is_empty());
+        let count = instances().map(Vec::len).sum::<usize>() + 1;
+        if count > 512 {
+            return Err(Error::Unsupported("GPU pass capacity"));
+        }
+        let mut passes = Vec::new();
+        passes.try_reserve_exact(count)?;
+        for run in instances() {
+            let starts = reads_instance(run);
+            for (index, pass) in run.iter().enumerate() {
+                passes.push(ComputePass {
+                    entry_point: pass.entry_point(),
+                    horizontal: pass.horizontal(),
+                    values: pass.values(),
+                    checkpoint: starts && index == 0,
+                });
+            }
+        }
+        let values = [
+            top.opacity,
+            project::BlendMode::Normal as u32 as f32,
+            f32::from(u8::from(top.coverage.is_some())),
+        ];
+        passes.push(ComputePass {
+            entry_point: BLEND_ENTRY,
+            horizontal: false,
+            values: Cow::Borrowed(&values),
+            checkpoint: false,
+        });
         self.execute(
             top.image,
-            std::iter::once(ComputePass {
-                entry_point: BLEND_ENTRY,
-                horizontal: false,
-                values: Cow::Borrowed(&values),
-            }),
-            EffectInputs {
-                input: top.image,
-                coverage: None,
-                below: base.image,
+            passes.into_iter(),
+            Bindings {
+                aux: Some((ReadImage::Below, base.image)),
+                coverage: top.coverage,
+                checkpoint: instances().any(|run| reads_instance(run)),
             },
             hooks,
         )
@@ -916,8 +1020,16 @@ impl EffectCompositor for FrameEffects<'_> {
         hooks: &dyn ExecutionHooks,
     ) -> Result<Image> {
         self.hooks(hooks)?;
+        inputs.validate(item)?;
+        let mut read = None;
         for pass in passes {
             render::effects::validate_pass(pass, item.width(), item.height())?;
+            if let Some(next) = read_image(pass.entry_point())? {
+                if read.is_some_and(|previous| previous != next) {
+                    return Err(Error::Unsupported("GPU auxiliary inputs"));
+                }
+                read = Some(next);
+            }
         }
         self.execute(
             item,
@@ -925,8 +1037,22 @@ impl EffectCompositor for FrameEffects<'_> {
                 entry_point: pass.entry_point(),
                 horizontal: pass.horizontal(),
                 values: pass.values(),
+                checkpoint: false,
             }),
-            inputs,
+            Bindings {
+                aux: read.map(|read| {
+                    (
+                        read,
+                        if read == ReadImage::Instance {
+                            inputs.input
+                        } else {
+                            inputs.below
+                        },
+                    )
+                }),
+                coverage: None,
+                checkpoint: false,
+            },
             hooks,
         )
     }
@@ -1005,12 +1131,24 @@ mod tests {
             let image = Image::new(17, 9, [0.2; 4], hooks).unwrap();
             let mut below = Image::new(17, 9, [0.1; 4], hooks).unwrap();
             let original = below.pixels().to_vec();
+            let cover = Image::new(17, 9, [0.5; 4], hooks).unwrap();
+            let mirror = EffectPass::Sample {
+                entry_point: "mirror",
+                uniforms: [8.5, 4.5, 1.0, 0.0]
+                    .map(render::effects::Uniform::Float)
+                    .to_vec(),
+            };
+            let runs = [
+                vec![mirror],
+                render::effects::grade_passes(20.0, 0.0, 0.0, 0.0).unwrap(),
+            ];
             let mut scope = gpu.open(hooks).unwrap();
             scope.boundary = Some(boundary.clone());
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 if layered {
-                    // Same custody for the resident frame operation: a lost or timed
-                    // out submission publishes nothing and the CPU inputs stay intact.
+                    // Same custody for the resident frame operation, with its instance
+                    // checkpoint and coverage pair: a lost or timed out submission
+                    // publishes nothing and the CPU inputs stay intact.
                     let normal = project::BlendMode::Normal;
                     scope
                         .composite_layers(
@@ -1021,11 +1159,15 @@ mod tests {
                                     image: &below,
                                     opacity: 1.0,
                                     mode: normal,
+                                    effects: &[],
+                                    coverage: None,
                                 },
                                 FrameLayer {
                                     image: &image,
                                     opacity: 0.7,
                                     mode: normal,
+                                    effects: &runs,
+                                    coverage: Some(&cover),
                                 },
                             ],
                             hooks,
@@ -1046,6 +1188,7 @@ mod tests {
             drop(scope);
             drop(image);
             drop(below);
+            drop(cover);
             let charged = boundary.budget.snapshot().unwrap().used;
             assert!(
                 charged >= 6 * Image::bytes(17, 9).unwrap(),

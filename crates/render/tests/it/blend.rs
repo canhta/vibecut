@@ -66,7 +66,10 @@ fn every_mode_matches_linear_image_pair_at_zero_half_and_full_opacity() {
 
 #[test]
 fn frame_layers_match_the_blend_reference_and_recompute_from_the_same_inputs() {
-    use render::effects::{CpuEffects, EffectCompositor, EffectInputs, EffectPass, FrameLayer};
+    use render::effects::{
+        CpuEffects, EffectCompositor, EffectInputs, EffectPass, FrameLayer, Uniform, apply_effect,
+        grade_passes,
+    };
     use std::sync::atomic::AtomicUsize;
     #[derive(Clone, Copy)]
     enum Reply {
@@ -148,11 +151,15 @@ fn frame_layers_match_the_blend_reference_and_recompute_from_the_same_inputs() {
             image: &backdrop,
             opacity: 1.0,
             mode: BlendMode::Normal,
+            effects: &[],
+            coverage: None,
         },
         FrameLayer {
             image: &top,
             opacity: 0.5,
             mode: BlendMode::Normal,
+            effects: &[],
+            coverage: None,
         },
     ];
     let three = [
@@ -162,20 +169,46 @@ fn frame_layers_match_the_blend_reference_and_recompute_from_the_same_inputs() {
             image: &third,
             opacity: 0.7,
             mode: BlendMode::Multiply,
+            effects: &[],
+            coverage: None,
+        },
+    ];
+    // Two successive input-reading instances around an empty one, then prepared coverage.
+    let mirror = EffectPass::Sample {
+        entry_point: "mirror",
+        uniforms: [2.5, 1.5, 1.0, 0.0].map(Uniform::Float).to_vec(),
+    };
+    let mut opening = vec![mirror.clone()];
+    opening.extend(grade_passes(20.0, 0.0, 20.0, 0.0).unwrap());
+    let runs = [opening, Vec::new(), vec![mirror]];
+    let half = Image::new(w, h, [0.5; 4], &hooks).unwrap();
+    let effected = [
+        two[0],
+        FrameLayer {
+            effects: &runs,
+            coverage: Some(&half),
+            ..two[1]
         },
     ];
     let expected = |layers: &[FrameLayer<'_>]| {
         let mut out = vec![[0.0f32; 4]; (w * h) as usize];
         for layer in layers {
-            for (d, s) in out.iter_mut().zip(layer.image.pixels()) {
-                *d = blend::pixel(*d, *s, layer.opacity, layer.mode);
+            let mut image =
+                Image::from_working_pixels(w, h, layer.image.pixels().iter().copied(), &hooks)
+                    .unwrap();
+            for run in layer.effects {
+                image = apply_effect(image, run, layer.image, &CpuEffects, &hooks).unwrap();
+            }
+            for (i, (d, s)) in out.iter_mut().zip(image.pixels()).enumerate() {
+                let c = layer.coverage.map_or(1.0, |c| c.pixels()[i][3]);
+                *d = blend::pixel(*d, s.map(|v| v * c), layer.opacity, layer.mode);
             }
         }
         out
     };
     let used = || hooks.used.load(std::sync::atomic::Ordering::SeqCst);
     let held = used();
-    for layers in [&two[..], &three[..]] {
+    for layers in [&two[..], &three[..], &effected[..]] {
         let reference = render::effects::reference_layers(w, h, layers, &hooks).unwrap();
         assert_eq!(reference.pixels(), expected(layers));
         let cpu = render::effects::composite_layers(w, h, layers, &CpuEffects, &hooks).unwrap();
@@ -239,6 +272,13 @@ fn frame_layers_match_the_blend_reference_and_recompute_from_the_same_inputs() {
             two[0],
             FrameLayer {
                 image: &small,
+                ..two[1]
+            },
+        ],
+        [
+            two[0],
+            FrameLayer {
+                coverage: Some(&small),
                 ..two[1]
             },
         ],

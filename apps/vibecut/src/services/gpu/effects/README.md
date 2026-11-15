@@ -6,7 +6,7 @@ Interface: `GpuEffects`.
 device and queue. Native startup attaches it to each preview player; headless players
 use CPU. Shader entry names and ordered separable passes are data. Bindings expose the
 current run and immutable instance input (binding 6). The closed shader set reads
-track-below only for blend and instance input only for mirror; it never reads coverage.
+track-below only for blend and instance input only for mirror; only the resident blend reads coverage.
 Gamma and Invert read only the current run. Their ordered uniforms are `[gamma]`
 and `[channel, blend]`. They share the CPU reference's straight linear to encoded
 sRGB conversion, operation and decoded premultiplication. Invert's Alpha choice
@@ -44,10 +44,10 @@ Device geometry support and [aggregate byte admission](../../../../../../crates/
 are separate: supported dimensions can still refuse once caller/result images,
 decoding and encoding consume the shared budget.
 
-`composite_layers` admits exactly two layers: an opaque Normal backdrop and one Normal layer with any opacity, full canvas, so it runs the existing `blend` entry once with the backdrop as the auxiliary image. That is two uploads, one dispatch, one submission and one readback, charged as the 6I plan above with image-sized leases taken before any buffer exists; other plans (including three layers or another mode) answer `Unsupported` before device work and render's [`composite_layers`](../../../../../../crates/render/src/scene/README.md#effects-and-desktop-adapter) recomputes them on the CPU. `GpuEffects::work` reports cumulative uploads, dispatches, submissions and completed readbacks. Native Metal and Vulkan runs are required before admitting more than this case.
+`composite_layers` admits exactly two layers: an opaque Normal backdrop with no effects or coverage, and one Normal layer with any opacity whose effect instances pass render's `effects::resident` (gaussian, grade, chroma key and mirror only) and whose optional coverage is prepared on the CPU. It uploads the layer, the backdrop as the auxiliary image and the coverage, runs every instance's passes in order in one submission, then the `blend` entry with weights `[opacity, mode, coverage flag]`: a set flag scales the source by coverage alpha first. An instance with a mirror pass first copies the evolving image into a device-only checkpoint (1I) that its sample passes read, so a sample never sees another instance's input. That is one upload per image, one dispatch per pass plus the blend, one submission and one readback, charged as the 6I plan above plus 1I for the checkpoint and 2I for the coverage pair, every lease taken before any buffer exists; other plans (three layers, another mode, any other entry) answer `Unsupported` before device work and render's [`composite_layers`](../../../../../../crates/render/src/scene/README.md#effects-and-desktop-adapter) recomputes them on the CPU, as it does for a runtime loss. `GpuEffects::work` reports cumulative uploads, dispatches, submissions and completed readbacks. Native Metal and Vulkan runs are required before widening this case.
 
 Completed scratch reuses buffer allocations only within its frame scope, not image
-contents. Every apply/composite still packs and uploads its inputs, submits and waits
+contents. Every apply/composite/frame still packs and uploads its inputs, submits and waits
 for native work, reads the output back and constructs a separately charged CPU Image.
 CPU runs, masks, transforms, transitions and the next decode release idle capacity.
 Submitted completion owns

@@ -972,6 +972,36 @@ impl Prepared {
         }
     }
 }
+/// Bytes of one mask's evaluated copy, charged while it lives.
+fn evaluated_bytes(mask: &project::Mask) -> u64 {
+    let extra = match &mask.shape {
+        project::MaskShape::Text { content, .. } => content.as_str().len(),
+        project::MaskShape::Path { path } => {
+            path.vertices.len() * std::mem::size_of::<project::MaskVertex>()
+        }
+        _ => 0,
+    };
+    (extra + mask.id.len() + std::mem::size_of::<project::Mask>()) as u64
+}
+/// Whether an active `Clip` mask of `item` paints a stroke at `local`. A frame layer
+/// carries prepared coverage only, so a stroked item keeps the full mask path.
+pub(crate) fn strokes(
+    item: &project::Item,
+    local: time::Tick,
+    hooks: &dyn ExecutionHooks,
+) -> Result<bool> {
+    for mask in item
+        .masks
+        .iter()
+        .filter(|m| m.active() && m.scope == project::MaskScope::Clip)
+    {
+        let _params = hooks.reserve(MemoryKind::Compositor, evaluated_bytes(mask))?;
+        if mask.at(&item.animations, local)?.stroke.width > 0. {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 /// Text mask content and typography handed to the caller's glyph rasterizer.
 pub(crate) struct MaskText<'a> {
     pub content: &'a str,
@@ -1007,17 +1037,7 @@ pub(crate) fn apply(
     let mut strokes: Option<Image> = None;
     for mask in item.masks.iter().filter(|m| m.active() && m.scope == scope) {
         check(hooks)?;
-        let extra = match &mask.shape {
-            project::MaskShape::Text { content, .. } => content.as_str().len(),
-            project::MaskShape::Path { path } => {
-                path.vertices.len() * std::mem::size_of::<project::MaskVertex>()
-            }
-            _ => 0,
-        };
-        let _params = hooks.reserve(
-            MemoryKind::Compositor,
-            (extra + mask.id.len() + std::mem::size_of::<project::Mask>()) as u64,
-        )?;
+        let _params = hooks.reserve(MemoryKind::Compositor, evaluated_bytes(mask))?;
         let m = mask.at(&item.animations, local)?;
         let geometry = Geometry {
             center: [

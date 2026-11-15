@@ -949,7 +949,68 @@ impl<'a> Renderer<'a> {
                     }
                     ItemParams::Audio(_) => {}
                 }
-                if let Some(mut below) = below {
+                // A frame scope may keep the whole item resident: its effect instances, prepared
+                // mask coverage and the source-over onto the backdrop as one two-layer frame.
+                // Anything the plan cannot carry (adjustment, matte, masked grade, stroke,
+                // transform, blend mode, transition, other entries) keeps the run path below.
+                let resident = scoped.is_some()
+                    && below.is_some()
+                    && !adjustment
+                    && matte.is_none()
+                    && grade_at.is_empty()
+                    && !clear
+                    && !transform.active()
+                    && item.blend_mode == project::BlendMode::Normal
+                    && transition.is_none()
+                    && crate::effects::resident(&runs, out.width, out.height)
+                    && runs
+                        .iter()
+                        .flatten()
+                        .all(|pass| adapter.supports(pass.entry_point()))
+                    && !(masked && crate::mask::strokes(item, local, hooks)?);
+                if resident && let Some(backdrop) = &below {
+                    let coverage = if masked {
+                        adapter.release_idle()?;
+                        let mut coverage = Image::new(out.width, out.height, [1.0; 4], hooks)?;
+                        crate::mask::apply(
+                            &mut coverage,
+                            item,
+                            project::MaskScope::Clip,
+                            local,
+                            placement,
+                            &project.data().canvas,
+                            |mask, size, geometry| self.mask_glyph(mask, size, geometry, hooks),
+                            hooks,
+                        )?;
+                        Some(coverage)
+                    } else {
+                        None
+                    };
+                    let normal = project::BlendMode::Normal;
+                    let composed = crate::effects::composite_layers(
+                        out.width,
+                        out.height,
+                        &[
+                            crate::effects::FrameLayer {
+                                image: backdrop,
+                                opacity: 1.0,
+                                mode: normal,
+                                effects: &[],
+                                coverage: None,
+                            },
+                            crate::effects::FrameLayer {
+                                image: &out,
+                                opacity: final_opacity,
+                                mode: normal,
+                                effects: &runs,
+                                coverage: coverage.as_ref(),
+                            },
+                        ],
+                        adapter,
+                        hooks,
+                    )?;
+                    out = composed;
+                } else if let Some(mut below) = below {
                     // For an adjustment layer `out` is only its region; the stack runs on the
                     // backdrop copy below instead.
                     let mut filtered = out;
