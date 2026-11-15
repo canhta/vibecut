@@ -45,7 +45,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | MEDIA-28 | Yours: Favorites page | Done | Proposed | 111010; [ui/editor.md](../ui/editor.md#media-tile-menu-added-badge-folders-and-favorites) | Name rows, no thumbnails; library items out of scope |
 | MEDIA-29 | Favorites empty state, filter | Done | Differs | 111010; [ui/editor.md](../ui/editor.md#media-tile-menu-added-badge-folders-and-favorites) | Link opens Effects, not Library |
 | MEDIA-30 | Yours: My presets | Partial | Proposed | 111030; [ui/editor.md](../ui/editor.md#media-tile-menu-added-badge-folders-and-favorites) | Empty page only; clip presets unbuilt |
-| MEDIA-31 | Yours: Brand assets | Done | Proposed | 111016; [ui/editor.md](../ui/editor.md#media-tile-menu-added-badge-folders-and-favorites) | Click or drag inserts a copy |
+| MEDIA-31 | Yours: Brand assets | Done | Proposed | 111016; [ui/editor.md](../ui/editor.md#media-tile-menu-added-badge-folders-and-favorites) | Click or drag inserts a copy; labelled Brand media |
 | MEDIA-32 | Brand assets refresh, settings | Partial | Proposed | 111024 | Refresh only; gear is online |
 | MEDIA-33 | Stock library | Out of scope | — | 110949 | Online assets |
 | MEDIA-34 | Space uploads | Out of scope | — | 110940 | Cloud |
