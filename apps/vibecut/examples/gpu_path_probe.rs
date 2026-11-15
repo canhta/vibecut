@@ -6,6 +6,7 @@
 //! `cargo xtask build -- cargo run --release -p vibecut --example gpu_path_probe -- <mode>`
 //!   transfer  per-frame upload/readback and pass timing at 1080p and 4K
 //!   export    60 s 1080p timeline with a three-effect stack: CPU vs lent GPU
+//!             export, working-frame parity and the `EXPORT_GATE` verdict (355)
 //!   frames    render-only cost of the same timeline, CPU vs GPU, plain and masked
 //!
 //! `transfer` also times the 1080p three-effect item as one resident two-layer
@@ -856,7 +857,7 @@ fn export_run(
     project: &project::Project,
     effects: Option<Arc<dyn EffectCompositor>>,
     tag: &str,
-) -> Result<()> {
+) -> Result<f64> {
     let dir = testkit::fixture::dir("gpu-path");
     let out = dir.join(format!("export-{tag}.mp4"));
     assert!(!out.exists());
@@ -911,7 +912,7 @@ fn export_run(
         peak()
     );
     hooks.drained();
-    Ok(())
+    Ok(elapsed.as_secs_f64())
 }
 
 fn parity(a: &Image, b: &Image) -> (f32, usize) {
@@ -927,6 +928,36 @@ fn parity(a: &Image, b: &Image) -> (f32, usize) {
         }
     }
     (max, failed)
+}
+
+/// Working-frame parity of the CPU reference and the lent adapter at six ticks of
+/// `p`; any channel over 2e-5 fails the run, because the CPU is the reference.
+fn frame_parity(p: &project::Project, gpu: &Arc<Counted>, hooks: &Hooks, mask: &str) -> f32 {
+    let mut settings = RenderSettings::from_project(p);
+    let mut cpu = Renderer::new(p, settings.clone()).unwrap();
+    settings.effects = Some(gpu.clone());
+    let mut device = Renderer::new(p, settings).unwrap();
+    let (mut sa, mut sb) = (FileSources::default(), FileSources::default());
+    let (mut max, mut failed) = (0.0f32, 0usize);
+    for n in (0..60).step_by(10) {
+        let t = time::FrameRate::FPS_30.tick_of(n).unwrap();
+        let a = cpu.render_frame(t, &mut sa, hooks).unwrap();
+        let b = device.render_frame(t, &mut sb, hooks).unwrap();
+        let (m, f) = parity(&a, &b);
+        max = max.max(m);
+        failed += f;
+        println!(
+            "PARITY_FRAME mask={mask} tick={} max_abs={m:e} over_2e5={f}",
+            t.0
+        );
+    }
+    println!(
+        "PARITY mask={mask} ticks=6 channels={} max_abs={max:e} over_tolerance={failed} tolerance=2e-5 cpu_is_reference=true",
+        6usize * 1920 * 1080 * 4
+    );
+    gpu.report(&format!("frame_parity mask={mask}"));
+    assert_eq!(failed, 0, "GPU disagrees: CPU wins");
+    max
 }
 
 fn frames() {
@@ -968,31 +999,7 @@ fn frames() {
         }
     }
     for (mask, masks) in [("none", Vec::new()), ("ellipse", masks())] {
-        let p = project_at(&path, stack(3), masks);
-        let mut settings = RenderSettings::from_project(&p);
-        let mut cpu = Renderer::new(&p, settings.clone()).unwrap();
-        settings.effects = Some(gpu.clone());
-        let mut device = Renderer::new(&p, settings).unwrap();
-        let (mut sa, mut sb) = (FileSources::default(), FileSources::default());
-        let (mut max, mut failed) = (0.0f32, 0usize);
-        for &t in ticks.iter().step_by(10) {
-            let a = cpu.render_frame(t, &mut sa, &hooks).unwrap();
-            let b = device.render_frame(t, &mut sb, &hooks).unwrap();
-            let (m, f) = parity(&a, &b);
-            max = max.max(m);
-            failed += f;
-            println!(
-                "PARITY_FRAME mask={mask} tick={} max_abs={m:e} over_2e5={f}",
-                t.0
-            );
-        }
-        println!(
-            "PARITY mask={mask} ticks=6 channels={} max_abs={max:e} over_tolerance={failed} tolerance=2e-5 cpu_is_reference=true",
-            6usize * 1920 * 1080 * 4
-        );
-        gpu.report(&format!("frame_parity mask={mask}"));
-        assert_eq!(failed, 0, "GPU disagrees: CPU wins");
-        drop((cpu, device, sa, sb));
+        frame_parity(&project_at(&path, stack(3), masks), &gpu, &hooks, mask);
     }
     safety(&gpu);
     hooks.drained();
@@ -1072,12 +1079,19 @@ fn export() {
     export_run("1080p_60s_no_effects_cpu", &base, None, "no-effects").unwrap();
     gpu.report("export_cpu_floor");
     let p = project_at(&path, stack(3), Vec::new());
-    export_run("1080p_60s_3effects_cpu", &p, None, "cpu").unwrap();
+    let cpu = export_run("1080p_60s_3effects_cpu", &p, None, "cpu").unwrap();
     gpu.report("export_cpu_3effects");
     let outcome = export_run("1080p_60s_3effects_gpu", &p, Some(gpu.clone()), "gpu");
     gpu.report("export_gpu_3effects");
     // A measured budget refusal is a negative research result, never a GPU rate.
-    assert!(matches!(outcome, Ok(()) | Err(Error::Budget { .. })));
+    assert!(matches!(outcome, Ok(_) | Err(Error::Budget { .. })));
+    let max = frame_parity(&p, &gpu, &Hooks::budgeted(), "none");
+    // The 355 gate: the lent adapter stays wired to desktop export only while it
+    // completes faster than CPU under the same budget and encoder, within 2e-5.
+    let passed = outcome.as_ref().is_ok_and(|seconds| *seconds < cpu);
+    println!(
+        "EXPORT_GATE cpu_s={cpu:.3} gpu={outcome:?} parity_max_abs={max:e} passed={passed}"
+    );
     let hooks = Hooks::budgeted();
     hooks.cancel.store(true, Ordering::Relaxed);
     let cancelled = testkit::fixture::dir("gpu-path").join("cancelled.mp4");

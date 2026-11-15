@@ -5,13 +5,27 @@ use project::Project;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// The export dialog, created lazily on first open.
+/// The export dialog, created lazily on first open, and the optional desktop effect
+/// adapter lent to its attempts.
 #[derive(Default)]
 pub(in crate::editor) struct State {
     dialog: Option<ExportDialog>,
+    effects: Option<Arc<dyn render::effects::EffectCompositor>>,
 }
 
 impl State {
+    /// Lend the desktop effect adapter to later attempts, now or when the dialog is
+    /// created; a running attempt keeps its own.
+    pub(in crate::editor) fn set_effects(
+        &mut self,
+        effects: Arc<dyn render::effects::EffectCompositor>,
+    ) {
+        if let Some(dialog) = &mut self.dialog {
+            dialog.set_effects(effects.clone());
+        }
+        self.effects = Some(effects);
+    }
+
     /// Open or raise the dialog over the current project.
     pub(in crate::editor) fn open(
         &mut self,
@@ -180,7 +194,11 @@ impl State {
 
     fn ensure(&mut self, budget: engine::ByteBudget, render: Arc<RenderState>) -> Result<()> {
         if self.dialog.is_none() {
-            self.dialog = Some(ExportDialog::new(budget, render)?);
+            let mut dialog = ExportDialog::new(budget, render)?;
+            if let Some(effects) = &self.effects {
+                dialog.set_effects(effects.clone());
+            }
+            self.dialog = Some(dialog);
         }
         Ok(())
     }

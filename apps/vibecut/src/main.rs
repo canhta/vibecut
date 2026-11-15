@@ -85,6 +85,8 @@ struct Native {
     control: Option<mcp::Server>,
     control_options: Option<(PathBuf, mcp::Grants)>,
     workspace: Workspace,
+    /// Declared after `workspace`: project windows drop, and their export runners
+    /// cancel and join, before the adapter they borrow is released.
     effects: Option<Arc<vibecut::services::gpu::effects::GpuEffects>>,
     store: PreferenceStore,
     saved_preferences: Preferences,

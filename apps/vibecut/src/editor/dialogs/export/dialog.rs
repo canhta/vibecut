@@ -324,6 +324,10 @@ pub struct ExportDialog {
     job_done: usize,
     attempt_project: Option<Arc<project::Project>>,
     attempt_encoder: EncodePreference,
+    /// The desktop effect adapter the next start lends to its render settings.
+    effects: Option<Arc<dyn render::effects::EffectCompositor>>,
+    /// The adapter the attempt was started with; Retry reruns with it.
+    attempt_effects: Option<Arc<dyn render::effects::EffectCompositor>>,
     pub(crate) selection_range: Option<time::TimeRange>,
     finished: Option<Rendered>,
     pending_save: bool,
@@ -383,6 +387,8 @@ impl ExportDialog {
             job_done: 0,
             attempt_project: None,
             attempt_encoder: EncodePreference::default(),
+            effects: None,
+            attempt_effects: None,
             selection_range: None,
             finished: None,
             pending_save: false,
@@ -410,6 +416,11 @@ impl ExportDialog {
         }
         self.sources = sources;
         Ok(())
+    }
+    /// Lend the desktop effect adapter to the next start. A running attempt keeps the
+    /// adapter it was started with.
+    pub fn set_effects(&mut self, effects: Arc<dyn render::effects::EffectCompositor>) {
+        self.effects = Some(effects);
     }
     /// Inject the existing storage boundary; IO still runs on the engine worker.
     pub fn set_publication_fs(
@@ -651,6 +662,7 @@ impl ExportDialog {
         project: &Arc<project::Project>,
         options: ExportOptions,
         encoder: EncodePreference,
+        effects: Option<&Arc<dyn render::effects::EffectCompositor>>,
         ordinal: usize,
     ) -> Result<Queued> {
         let path = temp_output(options.format, ordinal);
@@ -658,6 +670,7 @@ impl ExportDialog {
         let mut settings = options.settings(project);
         settings.encoder = encoder;
         settings.render = self.render_state.settings(project)?;
+        settings.render.effects = effects.cloned();
         options.output.apply(&mut settings)?;
         settings.overwrite = project::atomic::Overwrite::Replace;
         let same = self
@@ -742,6 +755,16 @@ impl ExportDialog {
         options: ExportOptions,
         encoder: EncodePreference,
     ) -> Result<()> {
+        self.begin(project, options, encoder, self.effects.clone())
+    }
+    /// One attempt over an immutable snapshot: project, choices, encoder and adapter.
+    fn begin(
+        &mut self,
+        project: Arc<project::Project>,
+        options: ExportOptions,
+        encoder: EncodePreference,
+        effects: Option<Arc<dyn render::effects::EffectCompositor>>,
+    ) -> Result<()> {
         if self.active() {
             return Err(Error::Invalid("export in progress"));
         }
@@ -764,7 +787,9 @@ impl ExportDialog {
             .outputs()
             .into_iter()
             .enumerate()
-            .map(|(ordinal, output)| self.prepare(&project, output, encoder, ordinal))
+            .map(|(ordinal, output)| {
+                self.prepare(&project, output, encoder, effects.as_ref(), ordinal)
+            })
             .collect::<Result<std::collections::VecDeque<_>>>()?;
         let first = queue
             .pop_front()
@@ -782,6 +807,7 @@ impl ExportDialog {
         self.error = None;
         self.attempt_project = Some(project.clone());
         self.attempt_encoder = encoder;
+        self.attempt_effects = effects;
         self.saved.clear();
         self.group = None;
         self.caption_writes.clear();
@@ -810,10 +836,11 @@ impl ExportDialog {
         let options = self
             .attempt
             .ok_or(Error::Invalid("no export settings to retry"))?;
-        self.start(
+        self.begin(
             self.attempt_project.clone().unwrap_or(project),
             options,
             self.attempt_encoder,
+            self.attempt_effects.clone(),
         )
     }
     pub fn take_save_request(
