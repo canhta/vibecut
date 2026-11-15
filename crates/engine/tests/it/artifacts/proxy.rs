@@ -353,11 +353,16 @@ fn clearing_the_cache_while_open_falls_back_to_the_source_and_regenerates() {
 
 #[test]
 fn proxy_generation_dedupes_warm_hits_open_no_source_and_cancel_leaves_no_file() {
-    let Some(path) = source() else {
+    let Some(shared) = source() else {
         return;
     };
-    let asset = SourceAsset::import(AssetId(1), path.clone()).unwrap();
     let (dir, _budget, mut access, mut runner) = setup();
+    // The warm case moves the source away. Renaming the shared fixture made
+    // tests running beside this one fail to open it (NotFound), so this test
+    // moves a private copy with the same content.
+    let path = dir.path().join("source.mkv");
+    std::fs::copy(&shared, &path).unwrap();
+    let asset = SourceAsset::import(AssetId(1), path.clone()).unwrap();
     let first = access.generate_proxy(&mut runner, asset.clone()).unwrap();
     assert_eq!(
         access.generate_proxy(&mut runner, asset.clone()).unwrap(),
