@@ -246,6 +246,748 @@ fn pixel_parity(gpu: &vibecut::services::gpu::effects::GpuEffects, image: &Image
         assert_eq!(image.pixels(), original, "immutable input");
     }
 }
+/// One effect: its kind, the parameters it overrides and its item-local seconds.
+type EffectRow = (&'static str, Vec<(&'static str, project::EffectValue)>, f64);
+/// The 264 and 265 shader entries; every one is measured by at least three rows.
+const ROW_ENTRIES: [&str; 33] = [
+    "highlights",
+    "alpha_plane",
+    "color_key",
+    "luma_key",
+    "twirl",
+    "spherize",
+    "magnify",
+    "wave_warp",
+    "lens_distortion",
+    "turbulent_displace",
+    "corner_pin",
+    "basic_3d",
+    "brush_strokes",
+    "roughen_edges",
+    "camera_shake",
+    "sobel_edges",
+    "glow_add",
+    "glint_rays",
+    "radial_rays",
+    "light_leaks",
+    "lens_flare",
+    "rgb_split",
+    "drop_shadow",
+    "long_shadow",
+    "gradient",
+    "four_color_gradient",
+    "pixelate",
+    "detail_boost",
+    "lens_blur",
+    "wrap_shift",
+    "streak_blur",
+    "edge_lines",
+    "colour_relief",
+];
+/// Each 264/265 effect at its defaults and at two non-default settings. An effect
+/// whose default emits no pass (the identity) starts with the smallest override
+/// that makes it visible.
+fn effect_rows() -> Vec<EffectRow> {
+    use project::{Color, EffectValue as V};
+    let s = V::Scalar;
+    let pt = |x, y| V::Point([x, y]);
+    let rgb = |r, g, b| V::Color(Color([r, g, b, 255]));
+    vec![
+        ("twirl", vec![], 0.0),
+        (
+            "twirl",
+            vec![
+                ("angle", s(300.0)),
+                ("radius", s(80.0)),
+                ("center", pt(0.3, 0.6)),
+            ],
+            0.0,
+        ),
+        (
+            "twirl",
+            vec![
+                ("angle", s(-120.0)),
+                ("radius", s(15.0)),
+                ("center", pt(0.8, 0.2)),
+            ],
+            0.0,
+        ),
+        ("spherize", vec![("radius", s(20.0))], 0.0),
+        (
+            "spherize",
+            vec![("radius", s(60.0)), ("center", pt(0.3, 0.7))],
+            0.0,
+        ),
+        (
+            "spherize",
+            vec![("radius", s(8.0)), ("center", pt(0.9, 0.1))],
+            0.0,
+        ),
+        ("magnify", vec![], 0.0),
+        (
+            "magnify",
+            vec![
+                ("shape", V::Choice(1)),
+                ("magnification", s(350.0)),
+                ("size", s(20.0)),
+                ("feather", s(8.0)),
+                ("center", pt(0.3, 0.4)),
+            ],
+            0.0,
+        ),
+        (
+            "magnify",
+            vec![
+                ("magnification", s(600.0)),
+                ("size", s(12.0)),
+                ("center", pt(0.7, 0.6)),
+            ],
+            0.0,
+        ),
+        ("wave_warp", vec![], 0.0),
+        (
+            "wave_warp",
+            vec![
+                ("height", s(-25.0)),
+                ("width", s(13.0)),
+                ("direction", s(30.0)),
+                ("speed", s(2.0)),
+            ],
+            0.37,
+        ),
+        (
+            "wave_warp",
+            vec![
+                ("height", s(3.0)),
+                ("width", s(200.0)),
+                ("direction", s(200.0)),
+            ],
+            1.5,
+        ),
+        ("lens_distortion", vec![("curvature", s(40.0))], 0.0),
+        (
+            "lens_distortion",
+            vec![
+                ("curvature", s(-70.0)),
+                ("v_decentering", s(30.0)),
+                ("h_decentering", s(-20.0)),
+            ],
+            0.0,
+        ),
+        (
+            "lens_distortion",
+            vec![("curvature", s(100.0)), ("h_decentering", s(50.0))],
+            0.0,
+        ),
+        ("turbulent_displace", vec![], 0.0),
+        (
+            "turbulent_displace",
+            vec![
+                ("displacement", V::Choice(1)),
+                ("amount", s(-30.0)),
+                ("size", s(20.0)),
+                ("complexity", s(4.5)),
+                ("evolution", s(70.0)),
+                ("offset", pt(0.3, 0.7)),
+            ],
+            0.0,
+        ),
+        (
+            "turbulent_displace",
+            vec![
+                ("displacement", V::Choice(6)),
+                ("amount", s(12.0)),
+                ("size", s(8.0)),
+                ("complexity", s(10.0)),
+            ],
+            0.0,
+        ),
+        (
+            "corner_pin",
+            vec![
+                ("upper_left", pt(0.1, 0.05)),
+                ("lower_right", pt(0.85, 0.95)),
+            ],
+            0.0,
+        ),
+        (
+            "corner_pin",
+            vec![("upper_right", pt(0.7, 0.2)), ("lower_left", pt(0.2, 0.8))],
+            0.0,
+        ),
+        (
+            "corner_pin",
+            vec![
+                ("upper_left", pt(0.2, 0.1)),
+                ("upper_right", pt(0.9, 0.0)),
+                ("lower_right", pt(1.0, 0.9)),
+                ("lower_left", pt(0.0, 1.0)),
+            ],
+            0.0,
+        ),
+        ("basic_3d", vec![("swivel", s(30.0))], 0.0),
+        (
+            "basic_3d",
+            vec![("tilt", s(-25.0)), ("distance", s(40.0))],
+            0.0,
+        ),
+        (
+            "basic_3d",
+            vec![
+                ("swivel", s(-50.0)),
+                ("tilt", s(15.0)),
+                ("distance", s(-20.0)),
+            ],
+            0.0,
+        ),
+        ("brush_strokes", vec![], 0.0),
+        (
+            "brush_strokes",
+            vec![
+                ("angle", s(20.0)),
+                ("size", s(4.5)),
+                ("length", s(30.0)),
+                ("density", s(0.3)),
+            ],
+            0.0,
+        ),
+        (
+            "brush_strokes",
+            vec![("size", s(0.5)), ("length", s(3.0)), ("density", s(2.0))],
+            0.0,
+        ),
+        ("roughen_edges", vec![], 0.0),
+        (
+            "roughen_edges",
+            vec![
+                ("edge_type", V::Choice(1)),
+                ("border", s(20.0)),
+                ("scale", s(40.0)),
+                ("complexity", s(5.0)),
+            ],
+            0.0,
+        ),
+        (
+            "roughen_edges",
+            vec![
+                ("edge_type", V::Choice(3)),
+                ("border", s(3.0)),
+                ("scale", s(300.0)),
+                ("complexity", s(1.0)),
+            ],
+            0.0,
+        ),
+        ("camera_shake", vec![], 0.4),
+        (
+            "camera_shake",
+            vec![
+                ("amount", s(60.0)),
+                ("rotation", s(8.0)),
+                ("zoom", s(30.0)),
+                ("frequency", s(9.0)),
+            ],
+            1.3,
+        ),
+        (
+            "camera_shake",
+            vec![
+                ("amount", s(5.0)),
+                ("rotation", s(0.0)),
+                ("zoom", s(0.0)),
+                ("frequency", s(0.5)),
+            ],
+            2.0,
+        ),
+        ("echo_glow", vec![], 0.0),
+        (
+            "echo_glow",
+            vec![
+                ("threshold", s(20.0)),
+                ("echoes", s(8.0)),
+                ("radius", s(4.0)),
+                ("spread", s(1.2)),
+                ("intensity", s(300.0)),
+                ("decay", s(10.0)),
+                ("color", rgb(40, 200, 90)),
+            ],
+            0.0,
+        ),
+        (
+            "echo_glow",
+            vec![
+                ("threshold", s(85.0)),
+                ("echoes", s(1.0)),
+                ("radius", s(30.0)),
+                ("spread", s(3.0)),
+                ("intensity", s(50.0)),
+            ],
+            0.0,
+        ),
+        ("edge_glow", vec![], 0.0),
+        (
+            "edge_glow",
+            vec![
+                ("threshold", s(5.0)),
+                ("width", s(8.0)),
+                ("radius", s(30.0)),
+                ("intensity", s(400.0)),
+                ("only", V::Bool(true)),
+            ],
+            0.0,
+        ),
+        (
+            "edge_glow",
+            vec![
+                ("threshold", s(60.0)),
+                ("width", s(0.0)),
+                ("radius", s(2.0)),
+                ("intensity", s(80.0)),
+            ],
+            0.0,
+        ),
+        ("glint", vec![], 0.0),
+        (
+            "glint",
+            vec![
+                ("threshold", s(30.0)),
+                ("rays", V::Choice(3)),
+                ("length", s(12.0)),
+                ("rotation", s(10.0)),
+                ("intensity", s(250.0)),
+                ("colorize", s(70.0)),
+                ("color", rgb(255, 120, 40)),
+            ],
+            0.0,
+        ),
+        (
+            "glint",
+            vec![
+                ("threshold", s(90.0)),
+                ("rays", V::Choice(0)),
+                ("length", s(200.0)),
+                ("rotation", s(-60.0)),
+                ("intensity", s(40.0)),
+            ],
+            0.0,
+        ),
+        ("wonder_glow", vec![], 0.0),
+        (
+            "wonder_glow",
+            vec![
+                ("threshold", s(30.0)),
+                ("radius", s(6.0)),
+                ("intensity", s(250.0)),
+                ("saturation", s(180.0)),
+                ("use_color", V::Bool(true)),
+                ("mode", V::Choice(1)),
+            ],
+            0.0,
+        ),
+        (
+            "wonder_glow",
+            vec![
+                ("threshold", s(80.0)),
+                ("radius", s(60.0)),
+                ("saturation", s(0.0)),
+                ("mode", V::Choice(1)),
+            ],
+            0.0,
+        ),
+        ("volumetric_rays", vec![], 0.0),
+        (
+            "volumetric_rays",
+            vec![
+                ("center", pt(0.1, 0.9)),
+                ("threshold", s(20.0)),
+                ("length", s(90.0)),
+                ("intensity", s(300.0)),
+                ("only", V::Bool(true)),
+            ],
+            0.0,
+        ),
+        (
+            "volumetric_rays",
+            vec![
+                ("center", pt(0.7, 0.3)),
+                ("threshold", s(75.0)),
+                ("length", s(10.0)),
+                ("intensity", s(40.0)),
+            ],
+            0.0,
+        ),
+        ("light_leaks", vec![], 0.0),
+        (
+            "light_leaks",
+            vec![
+                ("c1", rgb(20, 200, 255)),
+                ("intensity", s(100.0)),
+                ("scale", s(30.0)),
+                ("direction", s(200.0)),
+                ("speed", s(4.0)),
+                ("seed", s(37.0)),
+                ("mode", V::Choice(1)),
+            ],
+            1.7,
+        ),
+        (
+            "light_leaks",
+            vec![
+                ("intensity", s(35.0)),
+                ("scale", s(600.0)),
+                ("direction", s(-45.0)),
+                ("seed", s(9000.0)),
+                ("mode", V::Choice(2)),
+            ],
+            0.25,
+        ),
+        ("lens_flare", vec![], 0.0),
+        (
+            "lens_flare",
+            vec![
+                ("center", pt(0.15, 0.2)),
+                ("brightness", s(250.0)),
+                ("blend", s(30.0)),
+            ],
+            0.0,
+        ),
+        (
+            "lens_flare",
+            vec![("center", pt(0.9, 0.8)), ("brightness", s(40.0))],
+            0.0,
+        ),
+        ("rgb_split", vec![], 0.0),
+        (
+            "rgb_split",
+            vec![
+                ("mode", V::Choice(1)),
+                ("amount", s(40.0)),
+                ("center", pt(0.3, 0.6)),
+                ("blend", s(25.0)),
+            ],
+            0.0,
+        ),
+        (
+            "rgb_split",
+            vec![("amount", s(3.5)), ("angle", s(125.0)), ("blend", s(60.0))],
+            0.0,
+        ),
+        ("drop_shadow", vec![], 0.0),
+        (
+            "drop_shadow",
+            vec![
+                ("color", rgb(200, 30, 30)),
+                ("opacity", s(90.0)),
+                ("direction", s(40.0)),
+                ("distance", s(12.0)),
+                ("softness", s(6.0)),
+                ("only", V::Bool(true)),
+            ],
+            0.0,
+        ),
+        (
+            "drop_shadow",
+            vec![
+                ("opacity", s(30.0)),
+                ("direction", s(260.0)),
+                ("distance", s(2.5)),
+                ("softness", s(0.8)),
+            ],
+            0.0,
+        ),
+        ("long_shadow", vec![], 0.0),
+        (
+            "long_shadow",
+            vec![
+                ("angle", s(30.0)),
+                ("length", s(25.0)),
+                ("color", rgb(30, 60, 200)),
+                ("opacity", s(80.0)),
+                ("fade", V::Bool(false)),
+            ],
+            0.0,
+        ),
+        (
+            "long_shadow",
+            vec![
+                ("angle", s(250.0)),
+                ("length", s(600.0)),
+                ("opacity", s(100.0)),
+                ("only", V::Bool(true)),
+            ],
+            0.0,
+        ),
+        ("gradient", vec![], 0.0),
+        (
+            "gradient",
+            vec![
+                ("start", pt(0.2, 0.3)),
+                ("end", pt(0.9, 0.6)),
+                ("shape", V::Choice(1)),
+                ("start_color", rgb(255, 0, 0)),
+                ("end_color", rgb(0, 0, 255)),
+            ],
+            0.0,
+        ),
+        (
+            "gradient",
+            vec![
+                ("start", pt(0.5, 0.5)),
+                ("end", pt(0.6, 0.9)),
+                ("shape", V::Choice(3)),
+            ],
+            0.0,
+        ),
+        ("four_color_gradient", vec![], 0.0),
+        (
+            "four_color_gradient",
+            vec![
+                ("p1", pt(0.0, 0.0)),
+                ("p2", pt(1.0, 0.0)),
+                ("p3", pt(0.0, 1.0)),
+                ("p4", pt(1.0, 1.0)),
+            ],
+            0.0,
+        ),
+        (
+            "four_color_gradient",
+            vec![
+                ("p1", pt(0.5, 0.5)),
+                ("c1", rgb(10, 20, 30)),
+                ("p4", pt(0.52, 0.5)),
+                ("c4", rgb(250, 240, 10)),
+            ],
+            0.0,
+        ),
+        ("color_key", vec![], 0.0),
+        (
+            "color_key",
+            vec![
+                ("color", rgb(180, 100, 30)),
+                ("tolerance", s(120.0)),
+                ("thin", s(2.0)),
+                ("feather", s(20.0)),
+            ],
+            0.0,
+        ),
+        (
+            "color_key",
+            vec![
+                ("color", rgb(0, 0, 0)),
+                ("tolerance", s(30.0)),
+                ("thin", s(-4.0)),
+                ("feather", s(50.0)),
+            ],
+            0.0,
+        ),
+        ("luma_key", vec![], 0.0),
+        (
+            "luma_key",
+            vec![("threshold", s(70.0)), ("cutoff", s(20.0))],
+            0.0,
+        ),
+        (
+            "luma_key",
+            vec![
+                ("threshold", s(40.0)),
+                ("cutoff", s(60.0)),
+                ("invert", V::Bool(true)),
+            ],
+            0.0,
+        ),
+        ("mosaic", vec![], 0.0),
+        (
+            "mosaic",
+            vec![
+                ("horizontal", s(7.0)),
+                ("vertical", s(13.0)),
+                ("softness", s(60.0)),
+            ],
+            0.0,
+        ),
+        (
+            "mosaic",
+            vec![
+                ("horizontal", s(33.0)),
+                ("vertical", s(3.0)),
+                ("softness", s(100.0)),
+            ],
+            0.0,
+        ),
+        ("unsharp_mask", vec![], 0.0),
+        (
+            "unsharp_mask",
+            vec![
+                ("amount", s(300.0)),
+                ("radius", s(4.0)),
+                ("threshold", s(20.0)),
+            ],
+            0.0,
+        ),
+        (
+            "unsharp_mask",
+            vec![("amount", s(500.0)), ("radius", s(0.5))],
+            0.0,
+        ),
+        ("sharpen", vec![("amount", s(150.0))], 0.0),
+        // The default disc (10 px) is a whole-image reduction the device refuses;
+        // the three narrower discs are gathered directly.
+        ("bokeh_blur", vec![], 0.0),
+        (
+            "bokeh_blur",
+            vec![("amount", s(2.0)), ("shape", V::Choice(0))],
+            0.0,
+        ),
+        (
+            "bokeh_blur",
+            vec![
+                ("amount", s(3.0)),
+                ("shape", V::Choice(2)),
+                ("rotation", s(30.0)),
+                ("highlight", s(100.0)),
+                ("threshold", s(40.0)),
+            ],
+            0.0,
+        ),
+        (
+            "bokeh_blur",
+            vec![
+                ("amount", s(1.0)),
+                ("shape", V::Choice(5)),
+                ("highlight", s(0.0)),
+            ],
+            0.0,
+        ),
+        ("offset", vec![("shift_x", s(30.0))], 0.0),
+        (
+            "offset",
+            vec![
+                ("shift_x", s(-12.5)),
+                ("shift_y", s(40.0)),
+                ("blend", s(35.0)),
+            ],
+            0.0,
+        ),
+        (
+            "offset",
+            vec![("shift_y", s(99.9)), ("blend", s(80.0))],
+            0.0,
+        ),
+        ("directional_blur", vec![("length", s(5.0))], 0.0),
+        (
+            "directional_blur",
+            vec![("direction", s(33.0)), ("length", s(18.0))],
+            0.0,
+        ),
+        (
+            "directional_blur",
+            vec![("direction", s(-100.0)), ("length", s(1.5))],
+            0.0,
+        ),
+        ("find_edges", vec![], 0.0),
+        ("find_edges", vec![("invert", V::Bool(true))], 0.0),
+        (
+            "find_edges",
+            vec![("invert", V::Bool(true)), ("blend", s(45.0))],
+            0.0,
+        ),
+        ("color_emboss", vec![], 0.0),
+        (
+            "color_emboss",
+            vec![
+                ("direction", s(200.0)),
+                ("relief", s(4.0)),
+                ("contrast", s(250.0)),
+                ("blend", s(20.0)),
+            ],
+            0.0,
+        ),
+        (
+            "color_emboss",
+            vec![
+                ("direction", s(-30.0)),
+                ("relief", s(0.5)),
+                ("contrast", s(500.0)),
+            ],
+            0.0,
+        ),
+    ]
+}
+/// The passes render evaluates for one effect row on a `width` x `height` picture
+/// at clip-pixel gain 1.
+fn effect_passes(row: &EffectRow, width: u32, height: u32, fine: bool) -> Vec<EffectPass> {
+    let (kind, params, seconds) = row;
+    let mut effect = project::effect_definition(kind).unwrap().instance(*kind);
+    for (id, value) in params {
+        effect = effect.with(id, *value).unwrap();
+    }
+    evaluate_effect(
+        &project::Animations::default(),
+        &effect,
+        time::Tick::from_seconds_f64(*seconds, time::Rounding::Nearest).unwrap(),
+        EffectGeometry::new([width, height], [1.0, 1.0]).unwrap(),
+        fine,
+        &Default::default(),
+    )
+    .unwrap()
+}
+/// Every pass of every [`effect_rows`] row runs on the CPU and on the measuring
+/// adapter from the same CPU-computed current image, so each shader entry is
+/// compared alone. Prints each error, counts measured rows per entry in
+/// `measured` and records proven entries over 2e-5 in `failures`; an unproven
+/// entry's error is the lander's evidence for admitting it.
+fn effect_entry_parity(
+    gpu: &vibecut::services::gpu::effects::GpuEffects,
+    measuring: &vibecut::services::gpu::effects::GpuEffects,
+    image: &Image,
+    label: &str,
+    measured: &mut std::collections::BTreeMap<&'static str, usize>,
+    failures: &mut Vec<String>,
+) {
+    let (w, h) = (image.width(), image.height());
+    let inputs = || EffectInputs {
+        input: image,
+        coverage: None,
+        below: image,
+    };
+    for row in effect_rows() {
+        let (kind, params, seconds) = &row;
+        let passes = effect_passes(&row, w, h, true);
+        assert!(!passes.is_empty(), "{kind} {params:?} emits no pass");
+        let mut current =
+            Image::from_working_pixels(w, h, image.pixels().iter().copied(), &Hooks).unwrap();
+        for pass in &passes {
+            let one = std::slice::from_ref(pass);
+            let cpu = CpuEffects.apply(&current, one, inputs(), &Hooks).unwrap();
+            let entry = pass.entry_point();
+            if entry != "gaussian" {
+                let proven = gpu.supports(entry);
+                match measuring.apply(&current, one, inputs(), &Hooks) {
+                    Ok(actual) => {
+                        let max = max_error(&cpu, &actual);
+                        *measured.entry(entry).or_default() += 1;
+                        eprintln!(
+                            "entry-parity {label} kind={kind} params={params:?} t={seconds} entry={entry} proven={proven} max_abs={max:e}"
+                        );
+                        if proven && max > 2e-5 {
+                            failures.push(format!("{label} {kind} {params:?} {entry} {max:e}"));
+                        }
+                    }
+                    Err(Error::Unsupported(reason)) => {
+                        assert!(
+                            !render::effects::shader_computes(pass, w, h),
+                            "{kind} {entry} refused: {reason}"
+                        );
+                        eprintln!(
+                            "entry-parity {label} kind={kind} params={params:?} entry={entry} refused (CPU whole-image pass)"
+                        );
+                    }
+                    Err(error) => panic!("{kind} {entry}: {error:?}"),
+                }
+            }
+            current = cpu;
+        }
+    }
+}
 #[test]
 fn heavy_gpu_matches_cpu_working_pixels_at_both_scales() {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -265,13 +1007,25 @@ fn heavy_gpu_matches_cpu_working_pixels_at_both_scales() {
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
     let gpu = std::sync::Arc::new(
         pollster::block_on(vibecut::services::gpu::effects::GpuEffects::new(
-            device, queue,
+            device.clone(),
+            queue.clone(),
         ))
         .unwrap(),
     );
+    let measuring = pollster::block_on(vibecut::services::gpu::effects::GpuEffects::measuring(
+        device, queue,
+    ))
+    .unwrap();
     for entry in ["color_mix", "gamma_unknown", "posterize"] {
         assert!(!gpu.supports(entry), "unadmitted {entry}");
     }
+    // Production runs exactly the proven entries; measurement runs every entry.
+    for entry in shader_entries() {
+        assert!(measuring.supports(entry.name), "{}", entry.name);
+        assert_eq!(gpu.supports(entry.name), entry.proven, "{}", entry.name);
+    }
+    let mut measured = std::collections::BTreeMap::new();
+    let mut failures = Vec::new();
     // The public image boundary rejects HDR/out-of-gamut working pixels; decoded
     // media must already satisfy that owner's premultiplied/clamped contract.
     for color in [
@@ -463,6 +1217,14 @@ fn heavy_gpu_matches_cpu_working_pixels_at_both_scales() {
         )
         .unwrap();
         pixel_parity(&gpu, &image, &format!("scale-{scale}"));
+        effect_entry_parity(
+            &gpu,
+            &measuring,
+            &image,
+            &format!("scale-{scale}"),
+            &mut measured,
+            &mut failures,
+        );
         for intensity in [0.0, 15.0, 100.0] {
             let passes = blur_passes(intensity, w, h).unwrap();
             let inputs = || EffectInputs {
@@ -726,6 +1488,15 @@ fn heavy_gpu_matches_cpu_working_pixels_at_both_scales() {
             }
         }
     }
+    for entry in ROW_ENTRIES {
+        let rows = measured.get(entry).copied().unwrap_or(0);
+        assert!(rows >= 6, "{entry} measured by {rows} rows over two scales");
+    }
+    assert!(
+        failures.is_empty(),
+        "proven entries over 2e-5:\n{}",
+        failures.join("\n")
+    );
     // Exercise bounded repeated passes separately from the small-resolution scale fixtures.
     let image = Image::from_working_pixels(
         31,
@@ -1040,7 +1811,7 @@ fn heavy_gpu_matches_cpu_working_pixels_at_both_scales() {
 }
 
 #[test]
-#[ignore = "bounded native 1080p pixel-effect measurement; run explicitly on hardware"]
+#[ignore = "bounded native 1080p effect measurement; run explicitly on hardware"]
 fn heavy_pixel_effects_native_1080p_measurement() {
     use std::sync::atomic::{AtomicU64, Ordering};
     struct Meter {
@@ -1063,19 +1834,29 @@ fn heavy_pixel_effects_native_1080p_measurement() {
         .expect("measurement requires a native adapter");
     assert_ne!(adapter.get_info().device_type, wgpu::DeviceType::Cpu);
     eprintln!(
-        "measurement adapter={:?} profile=dev warmup=2 repetitions=7 size=1920x1080",
-        adapter.get_info()
+        "measurement adapter={:?} profile={} warmup=2 repetitions=7 size=1920x1080",
+        adapter.get_info(),
+        if cfg!(debug_assertions) {
+            "dev"
+        } else {
+            "release"
+        }
     );
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
     let start = std::time::Instant::now();
     let gpu = pollster::block_on(vibecut::services::gpu::effects::GpuEffects::new(
-        device, queue,
+        device.clone(),
+        queue.clone(),
     ))
     .unwrap();
     eprintln!(
         "measurement pipeline_setup_ms={:.3}",
         start.elapsed().as_secs_f64() * 1000.0
     );
+    let measuring = pollster::block_on(vibecut::services::gpu::effects::GpuEffects::measuring(
+        device, queue,
+    ))
+    .unwrap();
     let meter = Meter {
         budget: engine::ByteBudget::new(256 << 20).unwrap(),
         peak: AtomicU64::new(0),
@@ -1138,6 +1919,76 @@ fn heavy_pixel_effects_native_1080p_measurement() {
                 assert_eq!(meter.budget.snapshot().unwrap().used, bytes);
             }
         }
+    }
+    // Preview (`fine` false) cost of each 264/265 effect at its first row, through
+    // the run splitter as the preview runs it: the CPU reference on up to eight
+    // workers, the production adapter (unproven entries and refused passes fall
+    // back to the CPU) and the measuring adapter (every shader entry on the
+    // device). One warm-up, then three timed frames. The error against the CPU is
+    // printed, not asserted: at 1920 pixels a sample coordinate's f32 roundoff
+    // alone moves a bilinear tap, so parity is the scale fixtures' table.
+    struct Workers;
+    impl ExecutionHooks for Workers {
+        fn cancelled(&self) -> bool {
+            false
+        }
+        fn parallelism(&self) -> usize {
+            std::thread::available_parallelism().map_or(1, |n| n.get().min(8))
+        }
+        fn run_tasks(&self, tasks: &mut [&mut (dyn FnMut() -> Result<()> + Send)]) -> Result<()> {
+            std::thread::scope(|scope| {
+                let handles: Vec<_> = tasks.iter_mut().map(|task| scope.spawn(task)).collect();
+                handles
+                    .into_iter()
+                    .map(|handle| handle.join().unwrap())
+                    .collect::<Result<Vec<()>>>()
+                    .map(drop)
+            })
+        }
+        fn reserve(&self, _: MemoryKind, _: u64) -> Result<Box<dyn Reservation>> {
+            Ok(Box::new(Lease))
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for row in effect_rows() {
+        if !seen.insert(row.0) {
+            continue;
+        }
+        let passes = effect_passes(&row, 1920, 1080, false);
+        let adapters: [&dyn EffectCompositor; 3] = [&CpuEffects, &gpu, &measuring];
+        let mut times = [Vec::new(), Vec::new(), Vec::new()];
+        let mut errors = [0.0_f32; 3];
+        for run in 0..4 {
+            let mut reference = None;
+            for (slot, adapter) in adapters.into_iter().enumerate() {
+                let item =
+                    Image::from_working_pixels(1920, 1080, input.pixels().iter().copied(), &Hooks)
+                        .unwrap();
+                let start = std::time::Instant::now();
+                let output = apply_effect(item, &passes, &input, adapter, &Workers).unwrap();
+                let ms = start.elapsed().as_secs_f64() * 1000.0;
+                if run > 0 {
+                    times[slot].push(ms);
+                }
+                if slot == 0 {
+                    reference = Some(output);
+                } else if let Some(cpu) = &reference {
+                    errors[slot] = errors[slot].max(max_error(cpu, &output));
+                }
+            }
+        }
+        let median = |samples: &mut Vec<f64>| {
+            samples.sort_by(f64::total_cmp);
+            samples[samples.len() / 2]
+        };
+        let [cpu_ms, gpu_ms, device_ms] = times.each_mut().map(median);
+        eprintln!(
+            "measurement-effect kind={} passes={} cpu_ms={cpu_ms:.3} gpu_ms={gpu_ms:.3} device_ms={device_ms:.3} gpu_max_abs={:e} device_max_abs={:e}",
+            row.0,
+            passes.len(),
+            errors[1],
+            errors[2]
+        );
     }
     drop(input);
     assert_eq!(meter.budget.snapshot().unwrap().used, 0);

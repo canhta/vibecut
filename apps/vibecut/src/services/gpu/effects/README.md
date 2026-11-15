@@ -5,8 +5,9 @@ Interface: `GpuEffects`.
 `GpuEffects` implements render's device-free effect interface on the eframe-owned wgpu
 device and queue. Native startup attaches it to each preview player; headless players
 use CPU. Shader entry names and ordered separable passes are data. Bindings expose the
-current run and immutable instance input (binding 6). The closed shader set reads
-track-below only for blend and instance input only for mirror; it never reads coverage.
+current run and immutable instance input (binding 6). The shader set reads
+track-below only for blend and the instance input only where render's table says
+(`ReadImage::Instance`); it never reads coverage.
 Gamma and Invert read only the current run. Their ordered uniforms are `[gamma]`
 and `[channel, blend]`. They share the CPU reference's straight linear to encoded
 sRGB conversion, operation and decoded premultiplication. Invert's Alpha choice
@@ -21,7 +22,17 @@ its encoded remap floors only the input span, retaining equal/reversed bounds.
 Strobe takes encoded RGB and original-picture fraction, decodes the colour once
 and mixes in linear light. Both read only current input and preserve alpha.
 Strobe time gating stays entirely in the existing effect evaluator, including
-idle no-pass phases. Reduce noise is a Sample entry reading only the current run (5x5 bilateral, uniforms `[spatial sigma, range sigma]`). Person matte is a Sample entry that reads the instance input as data: the 192x192 matte plane in the alpha of its first 36,864 texels, sampled bilinearly through the six-value affine map `[a, b, c, d, e, f]` and multiplied into the current run ([person matte](../../../../../../crates/render/src/scene/correction/README.md#person-matte)). Remaining pixel entries stay on the render CPU path.
+idle no-pass phases. Reduce noise is a Sample entry reading only the current run (5x5 bilateral, uniforms `[spatial sigma, range sigma]`). Person matte is a Sample entry that reads the instance input as data: the 192x192 matte plane in the alpha of its first 36,864 texels, sampled bilinearly through the six-value affine map `[a, b, c, d, e, f]` and multiplied into the current run ([person matte](../../../../../../crates/render/src/scene/correction/README.md#person-matte)). Keep Colour, Swap Colour, Posterise and Threshold have no entry and stay on the render CPU path: their hard colour and luma thresholds flip on the device's transfer roundoff.
+
+The 264 spatial and 265 whole-image entries (Highlights, Alpha Plane, Colour Key, Luma Key, the warps, generators, glows, shadows, Pixelate, Detail Boost, Lens Blur, Wrap Shift, Streak Blur, Edge Lines and Colour Relief) mirror their render references line by line with the same uniform layout. Shared helpers reproduce `image_ops::sample` (clamp, wrap and transparent edges, the 0..1 clamp; a clamp-edge coordinate is first limited to `[-1, extent]` and a transparent one beyond its footprint is zero, which leaves the result unchanged and keeps the integer conversion in range), the sample pass exit clamp, `f32::round`, `powf` at zero and `powi`'s square and multiply. The noise entries (Heat Haze, Paint Strokes, Torn Edges, Light Leaks) hash in u64 like the reference, as `(low, high)` u32 pairs with 16-bit partial products, so cell hashes are exact. Lens Blur runs only the direct gather: a disc the CPU reduces to a whole-image halving (`render::effects::shader_computes` false) is `Unsupported` and the run falls back to the CPU. Point parameters arrive evaluated in output pixels from render's evaluators.
+
+Render's table marks an entry `Wgsl::Unproven` until its parity is measured within 2e-5: its pipeline is built, but `GpuEffects::new` does not report it supported, so the preview keeps it on the CPU. `GpuEffects::measuring` runs every entry and exists only for parity measurement. Sparkle (`glint_rays`, ray reach up to 0.35 length² pixels amplifies trig roundoff), Long Shadow (`long_shadow`, a hard first-hit coverage test) and Pixelate (`pixelate`, tile selection by `floor(x / block)`) start unproven.
+
+Parity table: `heavy_gpu_matches_cpu_working_pixels_at_both_scales` runs every pass of each 264/265 effect at its defaults and two non-default rows on the 64x36 and 128x72 fixtures, on the CPU and the measuring adapter from the same current image, prints `entry-parity ... proven= max_abs=` per pass and fails for a proven entry over 2e-5. `heavy_pixel_effects_native_1080p_measurement` prints `measurement-effect kind= cpu_ms= gpu_ms= device_ms=` per effect at 1080p preview quality (CPU on up to eight workers; `gpu` is the production split, `device` the measuring adapter). Both run on the host adapter with:
+
+`cargo xtask build -- cargo test --release -p vibecut --test it -- effects::heavy_gpu_matches_cpu_working_pixels_at_both_scales effects::heavy_pixel_effects_native_1080p_measurement --include-ignored --nocapture`
+
+An unproven entry whose rows all print within 2e-5 becomes `Wgsl::Entry` or `Wgsl::Reads` in render's table; a proven one that fails becomes `Wgsl::Unproven` with its measured error recorded here. Measured errors and times: not yet run on a native adapter.
 All supplied input geometry is validated before allocation, including unused inputs.
 Unused read-only bindings follow the current ping-pong buffer; the writable output
 and any required auxiliary snapshot remain distinct. Blur does no colour or alpha conversion.
