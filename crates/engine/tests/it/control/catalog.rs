@@ -725,6 +725,7 @@ fn deterministic_catalog_and_schema_document_receipts() {
         ids(&|s| s.grant == Some(GrantClass::Human)),
         [
             "begin_gesture",
+            "brand.add_media",
             "cancel_gesture",
             "captions.add_empty",
             "captions.import",

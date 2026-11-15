@@ -23,6 +23,7 @@ Each module's contract is its README.
 | `editor/panels/assets/catalog.rs` | [Assets catalogue](src/editor/panels/assets/catalog/README.md) |
 | `editor/panels/assets/view/` | [Assets view](src/editor/panels/assets/view/README.md) |
 | `editor/panels/assets/view/audio.rs` | [Assets audio view](src/editor/panels/assets/view/audio/README.md) |
+| `editor/panels/assets/view/yours/` | [Yours pages](src/editor/panels/assets/view/yours/README.md) |
 | `editor/panels/assets/workflow/` | [Assets workflow](src/editor/panels/assets/workflow/README.md) |
 | `editor/panels/assets/workflow/audio.rs` | [Assets audio workflow](src/editor/panels/assets/workflow/audio/README.md) |
 | `editor/panels/assets/captions.rs` | [Captions tab](src/editor/panels/assets/captions/README.md) |

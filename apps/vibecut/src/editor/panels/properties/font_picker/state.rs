@@ -125,8 +125,8 @@ impl State {
             .iter()
             .filter(|entry| self.filter.admits(entry))
             .filter(|entry| query.is_empty() || entry.family.to_lowercase().contains(&query))
-            .partition(|entry| kit_rank(*entry).is_some());
-        kit.sort_by_key(|entry| kit_rank(*entry));
+            .partition(|entry| kit_rank(entry).is_some());
+        kit.sort_by_key(|entry| kit_rank(entry));
         let (mut presets, mut system): (Vec<&FontEntry>, Vec<&FontEntry>) = rest
             .into_iter()
             .partition(|entry| entry.origin != engine::control::FontOrigin::System);
