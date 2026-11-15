@@ -373,7 +373,8 @@ fn single(downloaded: &Path, suffix: &str) -> Result<PathBuf> {
 /// shortcut and machine PATH entry.
 fn windows_install(tools: &mut Tools, downloaded: &Path) -> Result<()> {
     let zip = single(downloaded, "zip")?;
-    let msi = single(downloaded, "msi")?;
+    // msiexec cannot open a package path with forward slashes (1619).
+    let msi = canonical(&single(downloaded, "msi")?)?;
     let smoke = tools.root.join("target/smoke");
     let portable = tools.root.join("target/portable");
     let mut command = Command::new("powershell");
@@ -387,6 +388,7 @@ fn windows_install(tools: &mut Tools, downloaded: &Path) -> Result<()> {
         false,
         &smoke.join("portable"),
     )?;
+    let logs = canonical(&smoke)?;
     let installed = PathBuf::from(
         tools
             .variable("ProgramW6432")
@@ -410,7 +412,7 @@ fn windows_install(tools: &mut Tools, downloaded: &Path) -> Result<()> {
         "/qn",
         "/norestart",
         "/l*v",
-        smoke.join("msi-install.log")
+        logs.join("msi-install.log")
     )?;
     let result = (|| {
         if !installed.join("vibecut-cli.exe").is_file() || !shortcut.is_file() {
@@ -429,7 +431,7 @@ fn windows_install(tools: &mut Tools, downloaded: &Path) -> Result<()> {
         "/qn",
         "/norestart",
         "/l*v",
-        smoke.join("msi-uninstall.log")
+        logs.join("msi-uninstall.log")
     )
     .map(|_| ());
     result.and(removed)?;

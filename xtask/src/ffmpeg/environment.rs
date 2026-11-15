@@ -131,6 +131,9 @@ pub fn environment_at(command: &mut Command, prefix: &Path) -> Result<(), String
             .filter(|value| !value.is_empty())
             .ok_or("MSVC INCLUDE is empty; install the Windows SDK or use a Visual Studio developer shell")?;
         windows_bindgen_environment(command, &include);
+        if cfg!(target_arch = "aarch64") {
+            windows_arm64_clang(command)?;
+        }
         if env::var_os("SHERPA_ONNX_LIB_DIR").is_none() {
             let manifest =
                 PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").ok_or("run via cargo xtask")?);
@@ -253,6 +256,38 @@ pub(super) fn windows_bindgen_environment(command: &mut Command, include: &std::
     // MSVC representation. Match the Rust ABI for every generated binding.
     args.push_str(&format!(" --target={target}"));
     command.env(key, args);
+}
+
+/// whisper.cpp's ggml refuses MSVC on ARM ("use clang"), and the cmake crate's
+/// Visual Studio generator always compiles with MSVC. ARM64 builds therefore
+/// hand C/C++ to `clang-cl` (Clang's MSVC-ABI driver; cc gives it the MSVC
+/// INCLUDE/LIB environment) and CMake to the Ninja generator, for this target
+/// only, so the generator uses that compiler.
+#[cfg(windows)]
+fn windows_arm64_clang(command: &mut Command) -> Result<(), String> {
+    let target = "aarch64-pc-windows-msvc";
+    let search = |name: &str| {
+        env::var_os("PATH")
+            .into_iter()
+            .flat_map(|path| env::split_paths(&path).collect::<Vec<_>>())
+            .map(|directory| directory.join(name))
+            .find(|candidate| candidate.is_file())
+    };
+    let clang = search("clang-cl.exe")
+        .or_else(|| {
+            env::var_os("ProgramFiles")
+                .map(|root| PathBuf::from(root).join(r"LLVM\bin\clang-cl.exe"))
+                .filter(|candidate| candidate.is_file())
+        })
+        .ok_or("Windows ARM64 needs LLVM clang-cl on PATH for whisper.cpp")?;
+    if search("ninja.exe").is_none() {
+        return Err("Windows ARM64 needs Ninja on PATH for whisper.cpp".into());
+    }
+    for variable in ["CC", "CXX"] {
+        command.env(format!("{variable}_{target}"), &clang);
+    }
+    command.env(format!("CMAKE_GENERATOR_{target}"), "Ninja");
+    Ok(())
 }
 
 /// Source provisioning runs on the target host: Windows needs MSYS2 and Linux
