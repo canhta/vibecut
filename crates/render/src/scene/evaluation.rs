@@ -617,6 +617,10 @@ impl<'a> Renderer<'a> {
                         hooks,
                     )?;
                 }
+                // A clip with no frame (a missing source in preview, an omitted one in a
+                // degraded export) leaves its layer transparent, so the runs that provably keep
+                // it transparent are skipped until one paints.
+                let mut clear = matches!(item.content, ItemParams::Video(_)) && video.is_none();
                 let below = if !graphic && !has_passes && !masked && !blended && !transform.active()
                 {
                     None
@@ -980,9 +984,10 @@ impl<'a> Renderer<'a> {
                             grade_coverage = Some(coverage);
                         }
                         for (index, run) in runs.iter().enumerate() {
-                            if run.is_empty() {
+                            if run.is_empty() || (clear && crate::effects::keeps_clear(run)) {
                                 continue;
                             }
+                            clear = false;
                             // A masked grade step mixes its result with the picture it started
                             // from, so the grade keeps its place in the stack.
                             let before = match &grade_coverage {

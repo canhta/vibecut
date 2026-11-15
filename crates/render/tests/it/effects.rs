@@ -4046,11 +4046,7 @@ fn streak_scene_uses_actual_unreduced_clip_crop_fit_and_generated_canvas_units()
                 assert_working_pixel(*a, *b, "Streak scene geometry");
             }
         }
-        // A missing source refuses export and previews black whatever the geometry, so the
-        // small row carries it.
-        if size != [37, 61] {
-            continue;
-        }
+        // A missing source refuses export and previews black whatever the geometry.
         src.missing = true;
         assert!(matches!(
             Renderer::new(&effected, settings.clone())
@@ -4097,6 +4093,99 @@ fn streak_scene_uses_actual_unreduced_clip_crop_fit_and_generated_canvas_units()
         };
         assert_working_pixel(*pixel, [alpha, 0.0, 0.0, alpha], "generated canvas units");
     }
+}
+
+/// A transparent 4x4 frame, the decoded twin of a missing source's empty layer.
+struct ClearFrame;
+impl SourceProvider for ClearFrame {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: time::Tick,
+        h: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        Image::from_working_pixels(4, 4, std::iter::repeat_n([0.0; 4], 16), h).map(Some)
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: i64,
+        n: usize,
+        rate: u32,
+        h: &dyn ExecutionHooks,
+    ) -> Result<AudioBlock> {
+        AudioBlock::new(rate, 2, n, MemoryKind::Decoded, h)
+    }
+}
+
+/// Bug: a missing source's preview ran every effect on its empty layer (a 300x300 Streak took
+/// 1.85 s). Skipping the runs that keep it transparent must not change a pixel: for every
+/// catalogue effect, at its defaults and at its soft maxima, the missing preview equals the
+/// same effect run on a decoded transparent frame, and a generator still paints.
+#[test]
+fn missing_preview_skips_only_effects_that_keep_an_empty_layer_clear() {
+    use project::*;
+    let mut painted = false;
+    for definition in effect_definitions() {
+        for maxima in [false, true] {
+            let mut effect = definition.instance("fx");
+            if maxima {
+                for param in definition.params {
+                    let value = match param.kind {
+                        EffectParamKind::Float { soft_max, .. } => EffectValue::Scalar(soft_max),
+                        EffectParamKind::Choice { options } => {
+                            EffectValue::Choice(options.len().saturating_sub(1) as u32)
+                        }
+                        EffectParamKind::Bool => EffectValue::Bool(true),
+                        _ => continue,
+                    };
+                    effect = effect.with(param.id, value).unwrap();
+                }
+            }
+            let mut data = content_scene(vec![effect]).into_data();
+            data.canvas.width = 48;
+            data.canvas.height = 27;
+            data.canvas.background = Color([0; 4]);
+            let project = Project::new(data).unwrap();
+            let settings = RenderSettings::from_project(&project);
+            let frame = |sources: &mut dyn SourceProvider| {
+                Renderer::new(&project, settings.clone())
+                    .unwrap()
+                    .preview_frame(time::Tick::ZERO, sources, &Hooks::default())
+            };
+            let mut missing = SpatialSource {
+                size: [4, 4],
+                calls: 0,
+                missing: true,
+                last: None,
+            };
+            match (frame(&mut missing), frame(&mut ClearFrame)) {
+                (Ok(skipped), Ok(decoded)) => {
+                    assert_eq!(skipped.pixels(), decoded.pixels(), "{}", definition.id);
+                    painted |= skipped.pixels().iter().any(|p| p[3] > 0.0);
+                }
+                (Err(_), Err(_)) => {}
+                (skipped, decoded) => panic!(
+                    "{}: {:?} vs {:?}",
+                    definition.id,
+                    skipped.err(),
+                    decoded.err()
+                ),
+            }
+            assert_eq!(missing.calls, 0);
+        }
+    }
+    assert!(painted, "no generator painted the empty layer");
 }
 
 #[test]

@@ -154,6 +154,27 @@ Crop/fit precede effects; generated content uses canvas author pixels. Item
 transform follows effects. The full-canvas stage cannot recover cropped pixels;
 transparent canvas borders remain. This is not source-before-placement parity.
 
+A video clip with no frame (a missing source in preview, an omitted one in a degraded export)
+has a transparent layer, so its effect runs are skipped while `effects::keeps_clear` proves
+they leave it transparent; the first run that can paint (a generator such as Light Leaks) and
+every later run execute as on a decoded transparent frame. Masks, strokes, transform and blend
+still run. Before the skip, the missing preview ran every effect on the empty layer, and a small probe
+(4x4 under a 300x300 output gives a gain of 75) lengthened spatial kernels further. Measured
+2026-11-15 on a 14-core x86-64 Windows desktop, revision 5d933d4e plus this change, one
+renderer per frame, two frames each, ms per frame (debug test profile / release):
+
+| Scene (4x4 probe at 300x300, matching probe at 1920x1080) | Before | After |
+|---|---|---|
+| Streak (length 2) 300x300 | 1874 / 102 | 1.5 / 0.7 |
+| Sparkle (`glint`) 300x300 | 1179 / 70 | 1.4 / 0.7 |
+| Streak (length 2) 1920x1080 | 2952 / 190 | 29 / 15 |
+| Streak (length 100) 1920x1080 | 43315 / 2348 | 29 / 15 |
+| Blur (intensity 100) 1920x1080 | 1229 / 97 | 29 / 15 |
+| Lens Blur (amount 100) 1920x1080 | 744 / 69 | 29 / 15 |
+| Sparkle (`glint`) 1920x1080 | 27666 / 1622 | 29 / 15 |
+
+The remaining cost is the canvas and layer allocation and composite.
+
 ## Generated graphic geometry
 
 Graphics use the shared bounded contour/distance coverage engine at native output size, without source reads or a raster cache. Default placement is a centered square with side min(512,canvas width,canvas height), scaled independently to the output axes; explicit placement wins. Only center alignment insets the author path by half stroke width. Rectangle radius is min(author axes)/2 times radius/50; ellipse radii are the author half-axes. Polygon and star are regular radial contours with the first vertex pointing up on the author half-extent circle: polygon sides 3-12 with corner radius rounding each vertex by sin(pi/sides)*radius/50 of that circle (a corner whose arc no longer fits stays sharp); star points 3-12 alternate outer radius 1 and inner radius depth/100 (1-99), no rounding. Sides, points and depth are keyframable scalars rounded to the nearest integer where a count. Outside rings survive until canvas clipping. Fill precedes ring source-over on an isolated item layer, then the existing effects/masks/transform/once-opacity/blend stages. Keyed colors are already linear and are never gamma-converted again. Appearance uses real item-local time in preview and export; evaluated scalar overshoot clamps to admitted ranges.

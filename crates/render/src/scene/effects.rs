@@ -1199,6 +1199,22 @@ fn strobe_pixel(pixel: [f32; 4], values: &[f32]) -> [f32; 4] {
 fn op(entry_point: &str) -> Option<&'static EffectOp> {
     OPS.iter().find(|op| op.entry_point == entry_point)
 }
+/// Whether `passes` provably turn a fully transparent layer into a fully transparent layer, so
+/// the scene may skip them on a layer known to be empty. A convolution averages zeros; a
+/// pixel-local op or LUT is evaluated once on transparent black; a sample op answers through
+/// its table entry. Unknown and composite entries are never skipped.
+pub(crate) fn keeps_clear(passes: &[EffectPass]) -> bool {
+    passes.iter().all(|pass| match pass {
+        EffectPass::Convolve { .. } => true,
+        EffectPass::Lut3d { table, strength } => table.pixel([0.0; 4], *strength) == [0.0; 4],
+        EffectPass::Pixel { entry_point, .. } => {
+            pixel_op(entry_point).is_some_and(|op| (op.apply)([0.0; 4], &pass.values()) == [0.0; 4])
+        }
+        EffectPass::Sample { entry_point, .. } => {
+            sample_op(entry_point).is_some_and(|op| !op.paints_clear)
+        }
+    })
+}
 fn pixel_op(entry_point: &str) -> Option<PixelOp> {
     match op(entry_point)?.kernel {
         Kernel::Pixel(op) => Some(op),
@@ -1280,6 +1296,10 @@ struct SampleOp {
     len: usize,
     valid: fn(&[f32], u32, u32) -> bool,
     apply: fn(&SampleInputs<'_>, u32, u32, &[f32]) -> [f32; 4],
+    /// The op can give a visible pixel when `current` and `input` are fully transparent (a
+    /// generator, or light added from nothing). False means every output alpha is then zero,
+    /// which the pass exit clamps to transparent black.
+    paints_clear: bool,
 }
 static OPS: &[EffectOp] = &[
     EffectOp {
@@ -1407,6 +1427,7 @@ static OPS: &[EffectOp] = &[
             len: 1,
             valid: chroma_edge::feather_valid,
             apply: chroma_edge::feather,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1594,6 +1615,7 @@ static OPS: &[EffectOp] = &[
                         .is_some_and(|softness| (0.0..=1.0).contains(softness))
             },
             apply: pixelate_sample,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1607,6 +1629,7 @@ static OPS: &[EffectOp] = &[
                         .is_some_and(|threshold| (0.0..=1.0).contains(threshold))
             },
             apply: detail_boost_sample,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1616,6 +1639,7 @@ static OPS: &[EffectOp] = &[
             len: 7,
             valid: spatial::valid_lens_blur,
             apply: spatial::lens_blur,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1625,6 +1649,7 @@ static OPS: &[EffectOp] = &[
             len: 3,
             valid: spatial::valid_wrap_shift,
             apply: spatial::wrap_shift,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1634,6 +1659,7 @@ static OPS: &[EffectOp] = &[
             len: 1,
             valid: |v, _, _| v.first().is_some_and(|a| (-1.0..=1.0).contains(a)),
             apply: vignette_sample,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1643,6 +1669,7 @@ static OPS: &[EffectOp] = &[
             len: 2,
             valid: denoise::valid_reduce_noise,
             apply: denoise::reduce_noise_sample,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1652,6 +1679,7 @@ static OPS: &[EffectOp] = &[
             len: 6,
             valid: super::matte::valid,
             apply: super::matte::sample,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1661,6 +1689,7 @@ static OPS: &[EffectOp] = &[
             len: 1,
             valid: |v, _, _| v.first().is_some_and(|a| (-1.0..=1.0).contains(a)),
             apply: grain_sample,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1670,6 +1699,7 @@ static OPS: &[EffectOp] = &[
             len: 4,
             valid: mirror_uniforms,
             apply: mirror,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1682,6 +1712,7 @@ static OPS: &[EffectOp] = &[
                     .is_some_and(|n| (2.0..=64.0).contains(n) && n.fract() == 0.0)
             },
             apply: streak_sample,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1694,6 +1725,7 @@ static OPS: &[EffectOp] = &[
                     && v.get(1).is_some_and(|blend| (0.0..=1.0).contains(blend))
             },
             apply: edge_lines_sample,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1707,6 +1739,7 @@ static OPS: &[EffectOp] = &[
                     && v.get(3).is_some_and(|blend| (0.0..=1.0).contains(blend))
             },
             apply: colour_relief_sample,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1716,6 +1749,7 @@ static OPS: &[EffectOp] = &[
             len: 4,
             valid: whole_image::valid_twirl,
             apply: whole_image::twirl,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1725,6 +1759,7 @@ static OPS: &[EffectOp] = &[
             len: 3,
             valid: whole_image::valid_spherize,
             apply: whole_image::spherize,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1734,6 +1769,7 @@ static OPS: &[EffectOp] = &[
             len: 6,
             valid: whole_image::valid_magnify,
             apply: whole_image::magnify,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1743,6 +1779,7 @@ static OPS: &[EffectOp] = &[
             len: 4,
             valid: whole_image::valid_wave,
             apply: whole_image::wave_warp,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1752,6 +1789,7 @@ static OPS: &[EffectOp] = &[
             len: 4,
             valid: whole_image::valid_lens,
             apply: whole_image::lens_distortion,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1761,6 +1799,7 @@ static OPS: &[EffectOp] = &[
             len: 8,
             valid: whole_image::valid_turbulent,
             apply: whole_image::turbulent_displace,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1770,6 +1809,7 @@ static OPS: &[EffectOp] = &[
             len: 11,
             valid: whole_image::valid_corner,
             apply: whole_image::corner_pin,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1779,6 +1819,7 @@ static OPS: &[EffectOp] = &[
             len: 6,
             valid: whole_image::valid_basic_3d,
             apply: whole_image::basic_3d,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1788,6 +1829,7 @@ static OPS: &[EffectOp] = &[
             len: 5,
             valid: whole_image::valid_brush,
             apply: whole_image::brush_strokes,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1797,6 +1839,7 @@ static OPS: &[EffectOp] = &[
             len: 8,
             valid: whole_image::valid_roughen,
             apply: whole_image::roughen_edges,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1806,6 +1849,7 @@ static OPS: &[EffectOp] = &[
             len: 4,
             valid: whole_image::valid_shake,
             apply: whole_image::camera_shake,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1815,6 +1859,7 @@ static OPS: &[EffectOp] = &[
             len: 1,
             valid: whole_image::valid_sobel,
             apply: whole_image::sobel_edges,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1824,6 +1869,7 @@ static OPS: &[EffectOp] = &[
             len: 8,
             valid: whole_image::valid_glow,
             apply: whole_image::glow_add,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1833,6 +1879,7 @@ static OPS: &[EffectOp] = &[
             len: 9,
             valid: whole_image::valid_glint,
             apply: whole_image::glint_rays,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1842,6 +1889,7 @@ static OPS: &[EffectOp] = &[
             len: 9,
             valid: whole_image::valid_radial,
             apply: whole_image::radial_rays,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1851,6 +1899,7 @@ static OPS: &[EffectOp] = &[
             len: 12,
             valid: whole_image::valid_leaks,
             apply: whole_image::light_leaks,
+            paints_clear: true,
         }),
     },
     EffectOp {
@@ -1860,6 +1909,7 @@ static OPS: &[EffectOp] = &[
             len: 4,
             valid: whole_image::valid_flare,
             apply: whole_image::lens_flare,
+            paints_clear: true,
         }),
     },
     EffectOp {
@@ -1869,6 +1919,7 @@ static OPS: &[EffectOp] = &[
             len: 7,
             valid: whole_image::valid_split,
             apply: whole_image::rgb_split,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1878,6 +1929,7 @@ static OPS: &[EffectOp] = &[
             len: 7,
             valid: whole_image::valid_drop,
             apply: whole_image::drop_shadow,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1887,6 +1939,7 @@ static OPS: &[EffectOp] = &[
             len: 10,
             valid: whole_image::valid_long,
             apply: whole_image::long_shadow,
+            paints_clear: false,
         }),
     },
     EffectOp {
@@ -1896,6 +1949,7 @@ static OPS: &[EffectOp] = &[
             len: 12,
             valid: whole_image::valid_gradient,
             apply: whole_image::gradient,
+            paints_clear: true,
         }),
     },
     EffectOp {
@@ -1905,6 +1959,7 @@ static OPS: &[EffectOp] = &[
             len: 20,
             valid: whole_image::valid_four,
             apply: whole_image::four_color_gradient,
+            paints_clear: true,
         }),
     },
 ];
