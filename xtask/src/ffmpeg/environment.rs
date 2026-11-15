@@ -287,6 +287,15 @@ fn windows_arm64_clang(command: &mut Command) -> Result<(), String> {
         command.env(format!("{variable}_{target}"), &clang);
     }
     command.env(format!("CMAKE_GENERATOR_{target}"), "Ninja");
+    // cc's flags replace CMake's MSVC defaults, which carry C++ exceptions;
+    // ggml's gguf.cpp uses `try`, as the Visual Studio generator allowed.
+    let flags = format!("CXXFLAGS_{target}");
+    let mut value = env::var(&flags).unwrap_or_default();
+    if !value.is_empty() {
+        value.push(' ');
+    }
+    value.push_str("-EHsc");
+    command.env(flags, value);
     Ok(())
 }
 
