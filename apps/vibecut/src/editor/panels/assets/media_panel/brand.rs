@@ -1,16 +1,18 @@
 //! Owns the Brand assets page's work on the lent brand kit store.
 //!
-//! A listing hashes every kit file and a copy reads a whole file, so both run on a thread the
-//! frame polls. A click copies the kit file into the project's media folder and hands that copy
-//! to the paste import, which inserts it at the playhead the click saw: the project gets its own
-//! file and never names the kit's.
+//! Both are registry commands (`brand.list`, `brand.copy_media`) sent through
+//! `services::assets::brand`; a listing hashes every kit file and a copy reads a whole file, so
+//! both run on a thread the frame polls. A click copies the kit file into the project's media
+//! folder and hands that copy to the paste import, which inserts it at the playhead the click
+//! saw: the project gets its own file and never names the kit's.
 use crate::editor::Port;
 use crate::editor::panels::assets::{AssetsTab, MediaSection, State};
 use crate::i18n::Text;
-use engine::control::BrandKitView;
+use crate::services::assets::brand::{self, run_brand};
+use engine::control::{BrandKitView, ControlResult};
 use libraries::brand_kit::BrandKit;
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         Arc,
         mpsc::{Receiver, TryRecvError},
@@ -47,12 +49,15 @@ impl BrandAssets {
         }
     }
 
-    /// Read the active kit again, off the UI thread.
-    pub(in crate::editor) fn refresh(&mut self) {
-        let store = self.store.clone();
+    /// Read the active kit again through `brand.list`, off the UI thread.
+    pub(in crate::editor) fn refresh(&mut self, budget: &engine::ByteBudget) {
+        let (store, budget) = (self.store.clone(), budget.clone());
         let (send, receive) = wake::channel();
         std::thread::spawn(move || {
-            let _ = send.send(store.active_view().map_err(|error| error.to_string()));
+            let listed = run_brand(&store, &budget, "brand.list", serde_json::json!({}))
+                .and_then(brand::kit)
+                .map_err(|error| error.to_string());
+            let _ = send.send(listed);
         });
         self.load = Some(receive);
         self.listing = Listing::Loading;
@@ -79,7 +84,7 @@ impl State {
             return;
         };
         if shown && !brand.started {
-            brand.refresh();
+            brand.refresh(port.read.budget);
         }
         if let Some(load) = &brand.load {
             match load.try_recv() {
@@ -134,19 +139,23 @@ impl State {
             let Listing::Ready(Some(kit)) = &brand.listing else {
                 return Err(crate::Error::Invalid("brand kit not listed"));
             };
-            let entry = kit
-                .media
-                .iter()
-                .find(|entry| {
-                    entry.id == media && entry.state == engine::control::BrandEntryState::Available
-                })
-                .ok_or(crate::Error::Invalid("brand asset unavailable"))?;
+            if !kit.media.iter().any(|entry| {
+                entry.id == media && entry.state == engine::control::BrandEntryState::Available
+            }) {
+                return Err(crate::Error::Invalid("brand asset unavailable"));
+            }
             let at = port.playhead()?;
             let directory = project::media_dir(port.session.saved_path());
-            let (kit, name, store) = (kit.id, entry.name.clone(), brand.store.clone());
+            let (store, budget) = (brand.store.clone(), port.read.budget.clone());
             let (send, receive) = wake::channel();
             std::thread::spawn(move || {
-                let _ = send.send(copy_into(&store, kit, media, &directory, &name));
+                let params = serde_json::json!({"media": media, "dir": directory});
+                let copied = match run_brand(&store, &budget, "brand.copy_media", params) {
+                    Ok(ControlResult::BrandMediaCopied { path }) => Ok(path),
+                    Ok(_) => Err(String::from("brand kit copy result")),
+                    Err(error) => Err(error.to_string()),
+                };
+                let _ = send.send(copied);
             });
             brand.copy = Some((receive, at));
             Ok(())
@@ -156,46 +165,4 @@ impl State {
             port.toast(text, Some(error.to_string()));
         }
     }
-}
-
-/// Copy the kit file into `directory` under its entry name, made safe for every filesystem
-/// and unique in the folder.
-fn copy_into(
-    store: &BrandKit,
-    kit: u64,
-    media: u64,
-    directory: &Path,
-    name: &str,
-) -> Result<PathBuf, String> {
-    std::fs::create_dir_all(directory).map_err(|error| error.to_string())?;
-    let name: String = name
-        .chars()
-        .map(|c| {
-            if matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') {
-                '_'
-            } else {
-                c
-            }
-        })
-        .collect();
-    let first = directory.join(&name);
-    let dest = if first.exists() {
-        let path = Path::new(&name);
-        let stem = path
-            .file_stem()
-            .map_or_else(String::new, |stem| stem.to_string_lossy().into_owned());
-        let extension = path
-            .extension()
-            .map_or_else(String::new, |ext| format!(".{}", ext.to_string_lossy()));
-        (2..=u32::MAX)
-            .map(|number| directory.join(format!("{stem} {number}{extension}")))
-            .find(|candidate| !candidate.exists())
-            .ok_or_else(|| String::from("no free file name"))?
-    } else {
-        first
-    };
-    store
-        .copy_media(kit, media, &dest)
-        .map_err(|error| error.to_string())?;
-    Ok(dest)
 }

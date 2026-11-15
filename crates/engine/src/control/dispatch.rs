@@ -63,6 +63,12 @@ fn brand_access<'a>(
 ) -> std::result::Result<&'a super::BrandAccess<'a>, crate::BrandKitError> {
     caller.brand.ok_or(crate::BrandKitError::Unavailable)
 }
+/// Run one brand kit edit on the lent store and answer with the active kit after it.
+fn brand_edit(caller: &Caller<'_>, edit: super::BrandEdit) -> Result<ControlResult> {
+    Ok(ControlResult::BrandKit {
+        kit: (brand_access(caller)?.edit)(edit)?,
+    })
+}
 fn music_access<'a>(caller: &Caller<'a>) -> crate::session::Result<&'a super::MusicAccess<'a>> {
     caller.music.ok_or(crate::session::EditError::Unsupported(
         "music library unavailable",
@@ -182,6 +188,46 @@ impl Session {
             }),
             Command::BrandList {} => Ok(ControlResult::BrandKit {
                 kit: (brand_access(caller)?.list)()?,
+            }),
+            Command::BrandAddFont { family, kit_name } => brand_edit(
+                caller,
+                super::BrandEdit::AddFont {
+                    family: family.into(),
+                    kit_name: kit_name.into(),
+                },
+            ),
+            Command::BrandAddMedia {
+                section,
+                path,
+                name,
+                kit_name,
+            } => brand_edit(
+                caller,
+                super::BrandEdit::AddMedia {
+                    section,
+                    path,
+                    name: name.into(),
+                    kit_name: kit_name.into(),
+                },
+            ),
+            Command::BrandRenameMedia { media, name } => brand_edit(
+                caller,
+                super::BrandEdit::RenameMedia {
+                    media,
+                    name: name.into(),
+                },
+            ),
+            Command::BrandRemoveMedia { media } => {
+                brand_edit(caller, super::BrandEdit::RemoveMedia { media })
+            }
+            Command::BrandRemoveFont { family } => brand_edit(
+                caller,
+                super::BrandEdit::RemoveFont {
+                    family: family.into(),
+                },
+            ),
+            Command::BrandCopyMedia { media, dir } => Ok(ControlResult::BrandMediaCopied {
+                path: (brand_access(caller)?.copy)(media, &dir)?,
             }),
             Command::TranscriptSearch { query, limit } => {
                 let limit = limit.map_or(crate::transcript::search::DEFAULT_HITS, |limit| {

@@ -1091,8 +1091,9 @@ mod tests {
         ));
     }
 
-    /// Fails if the brand kit page's add tile does not ask for its section's picker, if the
-    /// picked file does not reach the store, or if a tile's Remove leaves the file listed.
+    /// Fails if Home lists the kit before the page opens, if the add tile does not ask for its
+    /// section's picker, if the picked file does not reach the store through `brand.add_media`,
+    /// or if a tile's Remove (`brand.remove_media`) leaves the file listed.
     #[test]
     fn brand_kit_page_adds_and_removes_a_file_through_the_store() {
         use egui_kittest::{
@@ -1164,6 +1165,10 @@ mod tests {
             }
         }
         harness.run_steps(2);
+        assert!(
+            !harness.state().0.brand.loaded && !harness.state().0.brand.busy(),
+            "drawing Home reads no kit file before the page opens"
+        );
         harness.get(by("home.nav.brand_kit")).click();
         settle(&mut harness);
         assert!(harness.state().0.brand_open);

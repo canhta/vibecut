@@ -52,4 +52,16 @@ Failures are `engine::BrandKitError`: `NotFound`, `Limit`, `Invalid(what)`, `Int
 
 ## Control
 
-`brand.list` is a read command. Composition roots lend the store as `Caller::brand` through `engine::control::BrandAccess`; the engine owns no store and copies nothing into a project. The control adapter is `control.rs`.
+`with_control` lends the store as `engine::control::BrandAccess` for one request; the desktop's `services::assets::brand::run_brand` and any composition root send the registry commands through it. Commands act on the active kit and every edit answers with the kit after it:
+
+| Command | Store operation | Agent grant |
+|---|---|---|
+| `brand.list` | `active_view` | allowed |
+| `brand.add_media {section, path, name, kit_name}` | `add_media` | Human (names a source file) |
+| `brand.rename_media {media, name}` | `rename_media` | allowed |
+| `brand.remove_media {media}` | `remove_media` | allowed |
+| `brand.add_font {family, kit_name}` | `add_font` | allowed |
+| `brand.remove_font {family}` | `remove_font` | allowed |
+| `brand.copy_media {media, dir}` | `copy_media` into `dir` under the entry name, made safe and unique, verified | Human (writes a file) |
+
+The adds create the kit `kit_name` and make it active when no kit is active; the others refuse `NotFound` without one. Without a lent store the commands refuse `Unavailable`. The control adapter is `control.rs`.

@@ -57,9 +57,10 @@ Thumbnail retention and its leases belong to
 
 A non-generated asset whose source file is gone draws its tile with the missing body fill and one centred `Media missing` line in place of a thumbnail (`AssetRow::missing`, read from `VisualQuery::availability` while the rows are projected); the rest of the tile is unchanged. Measurements: [Missing media](../../../../../../../docs/product/ui/editor.md#missing-media).
 
-`brand` owns the Brand assets page's work on the lent brand kit store: the listing (which
-hashes every kit file, so it runs on a thread the frame polls) and the copy a row click asks
-for. The copy goes into the project's media folder under the entry's name, made unique and
+`brand` owns the Brand assets page's work on the lent brand kit store: the `brand.list`
+command (which hashes every kit file, so it runs on a thread the frame polls), sent when the
+page first shows and on its refresh icon, and the `brand.copy_media` command a row click
+sends. The copy goes into the project's media folder under the entry's name, made unique and
 safe for every filesystem, and is verified against the kit's hash; it then enters the paste
 import, which inserts it at the playhead the click saw. The project names its own copy and
 never the kit's stored file, so later kit edits leave it unchanged. A missing or damaged kit

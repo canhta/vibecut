@@ -44,7 +44,7 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [Window and panel layout](shell.md#window-and-panel-layout-layout) | 11 | 8 | 1 | 0 | 0 | 1 | 1 | 7 | 1 | 1 | 0 |
 | [Settings](shell.md#settings-set) | 26 | 9 | 4 | 7 | 0 | 4 | 2 | 0 | 2 | 15 | 0 |
 | [Keyboard shortcuts](shell.md#keyboard-shortcuts-shortcut) | 26 | 21 | 1 | 2 | 1 | 1 | 0 | 2 | 0 | 11 | 0 |
-| [Media](assets.md#media-media) | 35 | 21 | 6 | 1 | 0 | 2 | 5 | 2 | 2 | 18 | 8 |
+| [Media](assets.md#media-media) | 35 | 20 | 7 | 1 | 0 | 2 | 5 | 2 | 2 | 18 | 8 |
 | [Audio](assets.md#audio-audio) | 21 | 13 | 4 | 2 | 0 | 1 | 1 | 5 | 6 | 6 | 3 |
 | [Text library](assets.md#text-library-textlib) | 10 | 6 | 2 | 0 | 0 | 1 | 1 | 0 | 5 | 2 | 1 |
 | [Stickers](assets.md#stickers-stick) | 12 | 4 | 1 | 1 | 0 | 4 | 2 | 1 | 1 | 7 | 0 |
@@ -67,4 +67,4 @@ Evidence names (all local captures under `.spikes/`, not in the repo):
 | [AI chat](ai-shorts.md#ai-chat-agent) | 17 | 9 | 3 | 2 | 1 | 1 | 1 | 5 | 3 | 4 | 1 |
 | [Long video to shorts](ai-shorts.md#long-video-to-shorts-shorts) | 24 | 12 | 5 | 3 | 0 | 2 | 2 | 8 | 1 | 7 | 3 |
 | [States](states.md#states-state) | 12 | 7 | 3 | 0 | 1 | 0 | 1 | 2 | 2 | 4 | 3 |
-| **Total** | **670** | **384** | **122** | **64** | **6** | **53** | **41** | **107** | **88** | **307** | **69** |
+| **Total** | **670** | **383** | **123** | **64** | **6** | **53** | **41** | **107** | **88** | **307** | **69** |

@@ -255,12 +255,78 @@ Effect: `Edit`. Fixture: `Timeline`.
 }
 ```
 
+## `brand.add_font` — Add font to brand kit
+
+Effect: `Read`. Fixture: `Timeline`.
+
+```json
+{
+  "family": "Inter",
+  "kit_name": "Brand kit"
+}
+```
+
+## `brand.add_media` — Add file to brand kit
+
+Effect: `Read`. Fixture: `Timeline`.
+
+```json
+{
+  "kit_name": "Brand kit",
+  "name": "logo.png",
+  "path": "$output/logo.png",
+  "section": "image"
+}
+```
+
+## `brand.copy_media` — Copy brand kit file into a folder
+
+Effect: `Read`. Fixture: `Timeline`.
+
+```json
+{
+  "dir": "$output/media",
+  "media": 1
+}
+```
+
 ## `brand.list` — List active brand kit
 
 Effect: `Read`. Fixture: `Timeline`.
 
 ```json
 {}
+```
+
+## `brand.remove_font` — Remove font from brand kit
+
+Effect: `Read`. Fixture: `Timeline`.
+
+```json
+{
+  "family": "Inter"
+}
+```
+
+## `brand.remove_media` — Remove file from brand kit
+
+Effect: `Read`. Fixture: `Timeline`.
+
+```json
+{
+  "media": 1
+}
+```
+
+## `brand.rename_media` — Rename brand kit file
+
+Effect: `Read`. Fixture: `Timeline`.
+
+```json
+{
+  "media": 1,
+  "name": "Logo"
+}
 ```
 
 ## `burn_subtitles` — Burn subtitles into MP4

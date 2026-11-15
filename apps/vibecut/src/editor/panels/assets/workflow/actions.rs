@@ -38,7 +38,7 @@ impl State {
                 Action::Command(id) => port.request(Request::Action(id)),
                 Action::RefreshBrand => {
                     if let Some(brand) = &mut self.brand {
-                        brand.refresh();
+                        brand.refresh(port.read.budget);
                     }
                 }
                 Action::InsertBrandMedia(media) => self.insert_brand_media(port, media),

@@ -210,16 +210,50 @@ impl<'a> FontAccess<'a> {
         }
     }
 }
-/// The brand kit operation the process lends to control commands: the active kit's
-/// contents, or `None` when no kit is active. It is composition state borrowed for one
-/// request; the kernel owns no store and copies nothing into a project.
+/// One edit of the active brand kit a `brand.*` command asks of the lent store. The adds
+/// create the kit `kit_name` and make it active when no kit is active; the others refuse
+/// `NotFound` without an active kit.
+#[derive(Clone, Debug)]
+pub enum BrandEdit {
+    AddFont {
+        family: String,
+        kit_name: String,
+    },
+    AddMedia {
+        section: BrandMediaSection,
+        path: std::path::PathBuf,
+        name: String,
+        kit_name: String,
+    },
+    RenameMedia {
+        media: u64,
+        name: String,
+    },
+    RemoveMedia {
+        media: u64,
+    },
+    RemoveFont {
+        family: String,
+    },
+}
+/// The brand kit operations the process lends to control commands. It is composition state
+/// borrowed for one request; the kernel owns no store and copies nothing into a project.
 #[derive(Clone, Copy)]
 pub struct BrandAccess<'a> {
     list: &'a dyn Fn() -> Result<Option<BrandKitView>>,
+    edit: &'a dyn Fn(BrandEdit) -> Result<Option<BrandKitView>>,
+    copy: &'a dyn Fn(u64, &std::path::Path) -> Result<std::path::PathBuf>,
 }
 impl<'a> BrandAccess<'a> {
-    pub fn new(list: &'a dyn Fn() -> Result<Option<BrandKitView>>) -> Self {
-        Self { list }
+    /// `list` serves `brand.list` (the active kit, or `None`); `edit` serves the edits and
+    /// returns the active kit after them; `copy` serves `brand.copy_media`, copying one
+    /// active-kit file into a folder and returning the new file's path.
+    pub fn new(
+        list: &'a dyn Fn() -> Result<Option<BrandKitView>>,
+        edit: &'a dyn Fn(BrandEdit) -> Result<Option<BrandKitView>>,
+        copy: &'a dyn Fn(u64, &std::path::Path) -> Result<std::path::PathBuf>,
+    ) -> Self {
+        Self { list, edit, copy }
     }
 }
 /// The three sound-library operations the process lends to control commands. The
@@ -371,7 +405,7 @@ pub struct Caller<'a> {
     /// The process sticker catalog behind `stickers.search` and `stickers.insert`. Without it
     /// those commands refuse `Unsupported`.
     pub stickers: Option<&'a StickerAccess<'a>>,
-    /// The process brand kit store behind `brand.list`. Without it that command refuses
+    /// The process brand kit store behind the `brand.*` commands. Without it they refuse
     /// [`crate::BrandKitError::Unavailable`].
     pub brand: Option<&'a BrandAccess<'a>>,
     /// The process artifact caches behind `media.generate_waveform` and

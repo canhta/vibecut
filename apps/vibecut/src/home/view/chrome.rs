@@ -103,7 +103,8 @@ pub(super) fn rail(ui: &mut egui::Ui, rail: egui::Rect, state: &mut State, local
     .clicked()
     {
         if !state.brand_open {
-            state.brand.refresh();
+            let budget = state.budget.clone();
+            state.brand.open(&budget);
         }
         state.brand_open = true;
     }

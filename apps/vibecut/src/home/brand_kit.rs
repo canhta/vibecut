@@ -1,9 +1,10 @@
 //! Keeps the Home brand kit page's state, edited through one store worker.
 //!
-//! Every edit is a `libraries::brand_kit` store operation. A listing hashes each kit file, so
-//! no store call runs on the UI thread: the page sends requests and applies the listing that
-//! follows each one.
+//! Every listing and edit is a registry `brand.*` command (`services::assets::brand`) run on
+//! one worker thread, because a listing hashes each kit file. Each edit answers with the kit
+//! after it. Nothing is read until the page first opens.
 
+use crate::services::assets::brand::{self, run_brand};
 use engine::control::{BrandKitView, BrandMediaSection};
 use libraries::brand_kit::BrandKit;
 use std::{
@@ -70,12 +71,10 @@ enum Request {
         kit_name: String,
     },
     RenameMedia {
-        kit: u64,
         media: u64,
         name: String,
     },
     RemoveMedia {
-        kit: u64,
         media: u64,
     },
     AddFont {
@@ -83,7 +82,6 @@ enum Request {
         kit_name: String,
     },
     RemoveFont {
-        kit: u64,
         family: String,
     },
     Families,
@@ -109,8 +107,9 @@ pub(super) struct FontChooser {
     pub(super) families: Option<Result<Vec<String>, String>>,
 }
 
-/// The page state. The store is lent each frame; the worker starts on the first lend.
+/// The page state. The store is lent each frame; the worker starts when the page first opens.
 pub(super) struct Page {
+    store: Option<Arc<BrandKit>>,
     request: Option<Sender<Request>>,
     events: Receiver<Event>,
     /// The active kit as last listed; `None` before the first listing or with no kit yet.
@@ -130,6 +129,7 @@ impl Default for Page {
     fn default() -> Self {
         let (_, events) = mpsc::channel();
         Self {
+            store: None,
             request: None,
             events,
             kit: None,
@@ -146,19 +146,28 @@ impl Default for Page {
 }
 
 impl Page {
-    /// Take this frame's lent store: the first lend starts the worker and the first listing.
+    /// Take this frame's lent store. Nothing is read until the page opens.
     pub(super) fn attach(&mut self, store: Option<&Arc<BrandKit>>) {
         self.unavailable = store.is_none();
+        if self.store.is_none() {
+            self.store = store.cloned();
+        }
+    }
+
+    /// The page opened: the first open starts the worker and the first listing, a later one
+    /// lists again, since another window may have changed the kit.
+    pub(super) fn open(&mut self, budget: &engine::ByteBudget) {
         if self.request.is_some() {
+            self.refresh();
             return;
         }
-        let Some(store) = store else {
+        let Some(store) = self.store.clone() else {
             return;
         };
         let (request, requests) = mpsc::channel();
         let (sender, events) = wake::channel();
-        let store = store.clone();
-        std::thread::spawn(move || worker(&store, &requests, &sender));
+        let budget = budget.clone();
+        std::thread::spawn(move || worker(&store, &budget, &requests, &sender));
         self.request = Some(request);
         self.events = events;
         self.send(Request::List);
@@ -221,8 +230,8 @@ impl Page {
         }
     }
 
-    /// Re-read the active kit, for when another window may have changed it.
-    pub(super) fn refresh(&mut self) {
+    /// Re-read the active kit.
+    fn refresh(&mut self) {
         if self.request.is_some() && !self.busy() {
             self.send(Request::List);
         }
@@ -261,19 +270,13 @@ impl Page {
     }
 
     pub(super) fn rename_media(&mut self, media: u64, name: String) {
-        if let Some(kit) = &self.kit {
-            let kit = kit.id;
-            self.error = None;
-            self.send(Request::RenameMedia { kit, media, name });
-        }
+        self.error = None;
+        self.send(Request::RenameMedia { media, name });
     }
 
     pub(super) fn remove_media(&mut self, media: u64) {
-        if let Some(kit) = &self.kit {
-            let kit = kit.id;
-            self.error = None;
-            self.send(Request::RemoveMedia { kit, media });
-        }
+        self.error = None;
+        self.send(Request::RemoveMedia { media });
     }
 
     pub(super) fn add_font(&mut self, family: String, kit_name: String) {
@@ -282,11 +285,8 @@ impl Page {
     }
 
     pub(super) fn remove_font(&mut self, family: String) {
-        if let Some(kit) = &self.kit {
-            let kit = kit.id;
-            self.error = None;
-            self.send(Request::RemoveFont { kit, family });
-        }
+        self.error = None;
+        self.send(Request::RemoveFont { family });
     }
 
     /// Open the Fonts chooser and read the font store's families once.
@@ -316,25 +316,27 @@ fn unique_name(path: &Path, taken: &BTreeSet<String>) -> String {
         .unwrap_or(name)
 }
 
-/// The active kit's identity; with none active, the kit called `name` (created when absent)
-/// becomes the active one.
-fn active_kit(store: &BrandKit, name: &str) -> libraries::brand_kit::Result<u64> {
-    let kits = store.kits()?;
-    if let Some(kit) = kits.iter().find(|kit| kit.active) {
-        return Ok(kit.id);
-    }
-    let id = match kits.iter().find(|kit| kit.name == name) {
-        Some(kit) => kit.id,
-        None => store.create(name)?,
-    };
-    store.set_active(Some(id))?;
-    Ok(id)
+/// One `brand.*` command over the store; its answer is the active kit after it.
+fn command(
+    store: &BrandKit,
+    budget: &engine::ByteBudget,
+    id: &str,
+    params: serde_json::Value,
+) -> Result<Option<BrandKitView>, String> {
+    run_brand(store, budget, id, params)
+        .and_then(brand::kit)
+        .map_err(|error| error.to_string())
 }
 
-fn worker(store: &BrandKit, requests: &Receiver<Request>, events: &wake::Sender<Event>) {
+fn worker(
+    store: &BrandKit,
+    budget: &engine::ByteBudget,
+    requests: &Receiver<Request>,
+    events: &wake::Sender<Event>,
+) {
     while let Ok(request) = requests.recv() {
-        let edit = match request {
-            Request::List => Ok(()),
+        let edited = match request {
+            Request::List => command(store, budget, "brand.list", serde_json::json!({})),
             Request::Families => {
                 let families = libraries::fonts::FontStore::native()
                     .and_then(|fonts| fonts.list(None))
@@ -347,22 +349,56 @@ fn worker(store: &BrandKit, requests: &Receiver<Request>, events: &wake::Sender<
                 section,
                 files,
                 kit_name,
-            } => active_kit(store, &kit_name).and_then(|kit| {
-                files.iter().try_for_each(|(path, name)| {
-                    store.add_media(kit, section, path, name).map(|_| ())
+            } => files
+                .iter()
+                .map(|(path, name)| {
+                    command(
+                        store,
+                        budget,
+                        "brand.add_media",
+                        serde_json::json!({
+                            "section": section,
+                            "path": path,
+                            "name": name,
+                            "kit_name": kit_name,
+                        }),
+                    )
                 })
-            }),
-            Request::RenameMedia { kit, media, name } => store.rename_media(kit, media, &name),
-            Request::RemoveMedia { kit, media } => store.remove_media(kit, media),
-            Request::AddFont { family, kit_name } => {
-                active_kit(store, &kit_name).and_then(|kit| store.add_font(kit, &family))
-            }
-            Request::RemoveFont { kit, family } => store.remove_font(kit, &family),
+                .collect::<Result<Vec<_>, _>>()
+                .map(|kits| kits.into_iter().last().flatten()),
+            Request::RenameMedia { media, name } => command(
+                store,
+                budget,
+                "brand.rename_media",
+                serde_json::json!({"media": media, "name": name}),
+            ),
+            Request::RemoveMedia { media } => command(
+                store,
+                budget,
+                "brand.remove_media",
+                serde_json::json!({"media": media}),
+            ),
+            Request::AddFont { family, kit_name } => command(
+                store,
+                budget,
+                "brand.add_font",
+                serde_json::json!({"family": family, "kit_name": kit_name}),
+            ),
+            Request::RemoveFont { family } => command(
+                store,
+                budget,
+                "brand.remove_font",
+                serde_json::json!({"family": family}),
+            ),
         };
-        if let Err(error) = edit {
-            let _ = events.send(Event::Failed(error.to_string()));
-        }
-        let listed = store.active_view().map_err(|error| error.to_string());
+        // A refused edit still leaves the page with the kit as it now stands.
+        let listed = match edited {
+            Ok(kit) => Ok(kit),
+            Err(error) => {
+                let _ = events.send(Event::Failed(error));
+                command(store, budget, "brand.list", serde_json::json!({}))
+            }
+        };
         if events.send(Event::Listed(listed)).is_err() {
             return;
         }

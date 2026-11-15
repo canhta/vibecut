@@ -198,7 +198,9 @@ impl Session {
         | Command::ClipsExport {
             directory: path, ..
         }
-        | Command::ExportClips { dir: path, .. } = &command
+        | Command::ExportClips { dir: path, .. }
+        | Command::BrandAddMedia { path, .. }
+        | Command::BrandCopyMedia { dir: path, .. } = &command
         {
             bounded_json(path, MAX_PATH_BYTES)?;
         }
