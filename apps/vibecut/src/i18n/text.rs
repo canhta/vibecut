@@ -322,6 +322,7 @@ catalog! {
     ShortsUploadTranscript { key: "shorts_upload_transcript", en: "Your transcript and timings are sent, not your audio.", vi: "Bản chép lời và thời gian được gửi đi, không gồm âm thanh." },
 
     // Shell and lifecycle.
+    AboutBuild { key: "about_build", en: "v{version} ({commit})", vi: "v{version} ({commit})" },
     AboutCopyright { key: "about_copyright", en: "Copyright © 2026 VibeCut contributors", vi: "Bản quyền © 2026 những người đóng góp VibeCut" },
     AboutLicencesLink { key: "about_licences_link", en: "Licences", vi: "Giấy phép" },
     AboutMenuItem { key: "about_menu_item", en: "About {name}", vi: "Giới thiệu {name}" },
@@ -334,6 +335,8 @@ catalog! {
     ClosePrompt { key: "close_prompt", en: "Save your project before closing?", vi: "Lưu dự án trước khi đóng?" },
     Close { key: "close_recovery", en: "Close, keep backup", vi: "Đóng và giữ bản sao lưu" },
     Conflict { key: "conflict", en: "The file changed elsewhere. Save a copy under a new name.", vi: "Tệp đã bị thay đổi nơi khác. Hãy lưu bản sao với tên mới." },
+    CrashNotice { key: "crash_notice", en: "VibeCut closed unexpectedly last time.", vi: "Lần trước VibeCut đã đóng đột ngột." },
+    CrashOpenFolder { key: "crash_open_folder", en: "Open crash report folder", vi: "Mở thư mục báo cáo sự cố" },
     DefaultProjectFileName { key: "default_project_file_name", en: "project.vibecut", vi: "project.vibecut" },
     Discard { key: "discard", en: "Discard", vi: "Bỏ" },
     Discovering { key: "discovering", en: "Looking for unsaved work…", vi: "Đang tìm bản chưa lưu…" },
@@ -341,6 +344,7 @@ catalog! {
     HomeShortsHint { key: "home_shorts_hint", en: "Turn a long video into shorts", vi: "Biến video dài thành video ngắn" },
     LoadingProject { key: "loading_project", en: "Loading project…", vi: "Đang mở dự án…" },
     NewProject { key: "new_project", en: "New project", vi: "Dự án mới" },
+    NoticeDismiss { key: "notice_dismiss", en: "Dismiss", vi: "Đóng thông báo" },
     OpenProject { key: "open_project", en: "Open project…", vi: "Mở dự án…" },
     ProjectError { key: "project_error", en: "Something went wrong. Your work is safe.", vi: "Đã xảy ra lỗi. Công việc của bạn vẫn an toàn." },
     Projects { key: "projects", en: "Projects", vi: "Dự án" },
@@ -356,6 +360,8 @@ catalog! {
     TooNew { key: "too_new", en: "Update VibeCut to open this project.", vi: "Hãy cập nhật VibeCut để mở dự án này." },
     TooOld { key: "too_old", en: "Made in an older VibeCut. Open it there first.", vi: "Tạo từ bản VibeCut cũ. Hãy mở bằng bản đó trước." },
     UntitledProject { key: "untitled_project", en: "Untitled Project", vi: "Dự án chưa đặt tên" },
+    UpdateAvailable { key: "update_available", en: "VibeCut {version} is available.", vi: "Đã có VibeCut {version}." },
+    UpdateOpen { key: "update_open", en: "View release", vi: "Xem bản phát hành" },
 
     // Projects page.
     ProjectsCardMenu { key: "projects_card_menu", en: "Project actions", vi: "Thao tác dự án" },
@@ -1715,6 +1721,7 @@ catalog! {
     SettingsTimeCodeAllColons { key: "settings_time_code_all_colons", en: "HH:MM:SS:FF", vi: "HH:MM:SS:FF" },
     SettingsTimeCodeSecondsPlusFrame { key: "settings_time_code_seconds_plus_frame", en: "HH:MM:SS+frame", vi: "HH:MM:SS+khung" },
     SettingsUnitsUnit { key: "settings_units_unit", en: "units", vi: "đơn vị" },
+    SettingsUpdateCheck { key: "settings_update_check", en: "Check for updates", vi: "Kiểm tra bản cập nhật" },
     ShortcutsExported { key: "shortcuts_exported", en: "Shortcuts exported.", vi: "Đã xuất phím tắt." },
     ShortcutsImported { key: "shortcuts_imported", en: "Shortcuts imported. Unknown actions skipped: {count}.", vi: "Đã nhập phím tắt. Bỏ qua hành động không rõ: {count}." },
     ShortcutsRefused { key: "shortcuts_refused", en: "Shortcut file refused: it is damaged, too large or from a newer VibeCut. Shortcuts unchanged.", vi: "Đã từ chối tệp phím tắt: tệp hỏng, quá lớn hoặc từ VibeCut mới hơn. Phím tắt không đổi." },

@@ -496,6 +496,12 @@ pub(super) const SCENES: &[Scene] = &[
         build: home_welcome,
     },
     Scene {
+        name: "home-notices",
+        reference_dark: None,
+        reference_light: None,
+        build: home_notices,
+    },
+    Scene {
         name: "home-projects",
         reference_dark: None,
         reference_light: None,
@@ -1155,7 +1161,7 @@ use editor::{
     export_dialog, export_gif, export_resolution, import_progress, models, models_vi, player_scene,
     player_variant, settings_dialog,
 };
-use home::{home, home_projects, home_welcome, projects_scene, projects_trash};
+use home::{home, home_notices, home_projects, home_welcome, projects_scene, projects_trash};
 pub(crate) use properties::inspector_mixed_vi;
 use properties::{
     close_prompt, close_prompt_vi, import_complete_vi, inspector_adjust_mask, inspector_audio,

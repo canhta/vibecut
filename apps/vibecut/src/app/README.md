@@ -1,6 +1,6 @@
 # Composition root
 
-Interface: `Workspace`, `EditorWindow`, `poll_workspace`, `background`.
+Interface: `Workspace`, `EditorWindow`, `poll_workspace`, `background`, `install_crash_log`, `save_crash_report`.
 
 The top app layer: it owns the window registry, focus, the stores it lends and the control
 attach, and imports every window. A window never names it; each window module (`home`,
@@ -19,6 +19,7 @@ attach, and imports every window. A window never names it; each window module (`
 | `lending` | The one lending point for process stores and the model service. |
 | `geometry` | Window size and position memory inside the bounded preference document. |
 | `control` | `poll_workspace` and `background`: the control attach. |
+| `startup` | [Startup notices](startup/README.md): the once-a-day release check and the local crash log, offered once on Home. |
 
 Home, Editor and Shorts are independent native viewports. `Workspace::windows` registers
 project windows by ProjectId; each owns its editor, history, playback, lease, picker,

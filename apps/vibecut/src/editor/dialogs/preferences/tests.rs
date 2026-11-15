@@ -342,6 +342,8 @@ fn settings_modal_applies_preferences_and_shortcut_transfers_through_the_picker_
             .is_some()
     );
     bench.click("settings.tab.general");
+    bench.click("settings.general.update_check");
+    assert!(!bench.editor().preferences.update_check);
     bench.click("settings.general.shortcuts.export");
     assert!(matches!(
         bench.editor_mut().take_lifecycle_action(),

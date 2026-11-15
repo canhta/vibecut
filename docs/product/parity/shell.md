@@ -14,7 +14,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SHELL-05 | Menu: Back to home | Done | Proposed | 2026-11-14b row 19 | Closes the saved project |
 | SHELL-06 | Menu: Settings | Done | Proposed | 110747 | |
 | SHELL-07 | Menu: Layout presets | Partial | Differs | 111918 | Only Reset layout |
-| SHELL-08 | Menu: About, terms | Done | Matches | 100436, [editor](../ui/editor.md#about) | Terms, Privacy and licence list are ours, unmeasured |
+| SHELL-08 | Menu: About, terms | Done | Matches | 100436, [editor](../ui/editor.md#about) | Terms, Privacy, licence list and the build commit in the pill are ours, unmeasured |
 | SHELL-09 | Menu: Help | Done | Not captured | | |
 | SHELL-10 | Feedback, theme, language, models | Ours | Proposed | | Reference has no light theme |
 | SHELL-11 | Project save, save as, delete | Ours | Proposed | web 02-editor-shell.md | Ctrl+S with a Saved toast |
@@ -94,7 +94,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | SET-19 | Perf: auto render | Missing | — | 14b/110833 | |
 | SET-20 | General: language | Done | Differs | 14b/110843 | English, Vietnamese |
 | SET-21 | General: notifications | Missing | — | 14b/110847 | |
-| SET-22 | General: software update | Missing | — | 14b/110847 | |
+| SET-22 | General: software update | Differs | Proposed | 14b/110847, [home](../ui/home.md#startup-notices) | A once-a-day check and a notice linking the release page; no download or install |
 | SET-23 | Edit: snapping, ripple, axis | Ours | Proposed | | |
 | SET-24 | Theme toggle | Ours | Proposed | | Reference has none |
 | SET-25 | Shortcut import, export | Ours | Proposed | | |

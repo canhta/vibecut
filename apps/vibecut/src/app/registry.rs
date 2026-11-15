@@ -45,6 +45,8 @@ pub struct Workspace {
     /// Prompts Home's agent card typed for projects that are still opening, by canonical
     /// path; the editor that registers for the path starts its first turn with the prompt.
     pub(super) agent_prompts: BTreeMap<PathBuf, String>,
+    /// The newer-release and last-crash notices Home shows once.
+    pub(super) notices: super::startup::Notices,
     /// Workers ask the event loop to repaint through this; nothing else polls while idle.
     wake: wake::Wake,
     wake_attached: bool,
@@ -74,6 +76,7 @@ impl Workspace {
         let persistence = ByteBudget::new(super::work::persistence_limit(&engine::SystemMemory))?;
         let lending = Lending::open(&root, &budget);
         let corrections = lending.footage();
+        let notices = super::startup::Notices::new(root.with_file_name("crashes"));
         let runner = std::rc::Rc::new(std::cell::RefCell::new(JobRunner::new(
             RunnerConfig {
                 concurrency: [2, 1, 1],
@@ -113,6 +116,7 @@ impl Workspace {
             lane_paths: BTreeMap::new(),
             lane_prune_key: Vec::new(),
             agent_prompts: BTreeMap::new(),
+            notices,
             wake,
             wake_attached: false,
             #[cfg(target_os = "macos")]
@@ -284,6 +288,24 @@ impl Workspace {
     pub fn warn_preferences_reset(&mut self) {
         self.home.warn_preferences_reset();
     }
+    /// Start the once-a-day check for a newer public release through `transport`, unless the
+    /// setting is off or a check started within a day of `now`. It runs on a worker that wakes
+    /// the loop; a newer release becomes Home's notice, anything else stays silent.
+    pub fn check_for_update(
+        &mut self,
+        transport: Arc<dyn transport::HttpTransport>,
+        now: std::time::SystemTime,
+    ) {
+        self.notices.check(&mut self.preferences, transport, now);
+    }
+    /// A release check is still running.
+    pub fn checking_for_update(&self) -> bool {
+        self.notices.checking()
+    }
+    /// The crash folder Open folder asked for, for the native shell to open.
+    pub fn take_folder_request(&mut self) -> Option<PathBuf> {
+        self.notices.take_reveal()
+    }
     /// Closing Home hides only Home. The root event loop outlives child windows.
     pub fn request_close(&mut self) {
         self.home_open = false;
@@ -303,6 +325,7 @@ impl Workspace {
             wake::notify_after(Duration::from_millis(8));
         }
         self.projects.tick();
+        self.notices.tick();
         if let Some(action) = self.projects.take_action() {
             self.project_action(action);
         }

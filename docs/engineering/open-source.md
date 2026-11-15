@@ -30,6 +30,19 @@ Weights are never bundled: the user starts every download from the model manager
 
 Local-first by default. Remote AI runs only after explicit consent that shows what is sent, to which provider (linking its own policy page) and estimated cost; the provider and model are the user's choice, so we do not restate their terms. Logs follow [standards](standards.md#logging). Keys and every other non-public project file (private datasets, recordings, account notes) live in git-ignored `.privates/` (keys in `.privates/.env`); their contents stay out of reports, logs and commits. Report vulnerabilities [privately](../../SECURITY.md).
 
+The release check is the one request the app makes on its own. On start, at most once a
+day and only while Settings > General > Check for updates is on (the default), it sends one
+plain GET to `https://api.github.com/repos/canhta/vibecut/releases/latest` carrying only a
+`User-Agent: VibeCut/<version>` header (the HTTP client adds `Host` and `Accept: */*`): no
+credential, cookie, identifier, project data or usage data. A newer tag shows a notice that
+links to the release page; nothing is downloaded or installed, and offline or a failed reply
+is silent. The time of the last check stays in the local preferences.
+
+A panic writes a crash report to `crashes/` in the local app data folder (time, version,
+build commit, OS, the panic's file and line, the last action ids and a backtrace cut to file
+names; no project content, message or path), keeping the newest five. The next start offers
+to open that folder. Nothing is uploaded.
+
 Human-imported fonts stay in the existing per-user font store, with original/decoded
 hashes, embedded licence provenance and explicit usage-rights acknowledgement in
 the [font catalog record](../../crates/libraries/src/font_catalog/README.md#custom-import).

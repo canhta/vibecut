@@ -205,6 +205,7 @@ impl Workspace {
                 }
                 self.home_shortcuts(&ctx);
             }
+            self.notices.show(&ctx, self.preferences.look());
             self.home.preferences = self.preferences.clone();
         } else {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));

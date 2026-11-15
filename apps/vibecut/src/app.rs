@@ -9,10 +9,12 @@ mod native_menu;
 mod picker;
 mod registry;
 mod runs;
+mod startup;
 mod viewports;
 mod window;
 mod work;
 
 pub use control::{background, poll_workspace, sticker_lend};
 pub use registry::Workspace;
+pub use startup::{install_crash_log, save_crash_report};
 pub use window::EditorWindow;

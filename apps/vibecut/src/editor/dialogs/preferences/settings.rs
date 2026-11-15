@@ -649,6 +649,14 @@ pub(super) fn show(
                         prefs.dark,
                         "dark",
                     );
+                    toggle(
+                        ui,
+                        actions,
+                        "settings.general.update_check",
+                        tr(Text::SettingsUpdateCheck).into(),
+                        prefs.update_check,
+                        "update_check",
+                    );
                     ui.separator();
                     ui.strong(tr(Text::SettingsShortcuts));
                     for (id, label, request) in [

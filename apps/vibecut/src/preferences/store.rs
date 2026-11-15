@@ -298,6 +298,7 @@ mod tests {
             ("time_code", serde_json::json!("all_colons")),
             ("audio_scrub", serde_json::json!(true)),
             ("export_sound", serde_json::json!(true)),
+            ("update_check", serde_json::json!(false)),
             (
                 "preview_lines",
                 serde_json::json!({

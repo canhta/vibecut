@@ -480,9 +480,11 @@ impl ActionSpec {
 /// Every key, menu and button action in the desktop app.
 mod editor;
 mod menu;
+mod recent;
 mod shell;
 
 pub use menu::{MENUS, Menu, MenuItem, menu_equivalent};
+pub(crate) use recent::{recent, remember};
 
 use std::sync::OnceLock;
 

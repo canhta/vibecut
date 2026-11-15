@@ -27,6 +27,7 @@ mod save_status;
 mod scenes;
 mod shorts;
 mod sounds;
+mod startup;
 mod timeline;
 mod tracks;
 mod transitions;

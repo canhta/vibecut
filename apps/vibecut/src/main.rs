@@ -109,6 +109,9 @@ impl eframe::App for Native {
         // No timer here: workers, the job runner and playback wake the loop themselves.
         self.workspace.attach(ctx);
         self.workspace.tick();
+        if let Some(folder) = self.workspace.take_folder_request() {
+            reveal(&folder);
+        }
         // Immediate child viewports are declared by the root UI pass. Keep
         // running that pass after Home is hidden, including the final close.
         if !self.workspace.home_open() {
@@ -314,6 +317,23 @@ impl eframe::App for Native {
         }
     }
 }
+/// Open `folder` in the platform file manager. A failure is logged, never shown: the crash
+/// notice has already done its part.
+fn reveal(folder: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let program = "xdg-open";
+    match std::process::Command::new(program).arg(folder).spawn() {
+        // Reap the file manager's launcher off the UI thread.
+        Ok(mut child) => drop(std::thread::spawn(move || child.wait())),
+        Err(error) => {
+            tracing::warn!(category = "reveal_failed", kind = ?error.kind(), "Folder could not be opened");
+        }
+    }
+}
 // Distribution startup check: the real workspace/frontend, without OS devices.
 fn headless_smoke(root: PathBuf) -> Result<()> {
     if root.exists() {
@@ -422,6 +442,7 @@ fn run() -> Result<()> {
         .or_else(|| std::env::var_os("APPDATA"))
         .ok_or(Error::Unsupported("preference directory"))?;
     let store = PreferenceStore::new(PathBuf::from(home).join(".config/vibecut/preferences.json"));
+    vibecut::app::install_crash_log(store.path().with_file_name("crashes"));
     let (preferences, warning) = store.load_with_warning();
     if let Some(issue) = warning {
         tracing::warn!(category = "preference_load_failed", %issue, "Preferences restored defaults");
@@ -432,6 +453,10 @@ fn run() -> Result<()> {
         workspace.warn_preferences_reset();
     }
     let saved_preferences = workspace.preferences.clone();
+    // After the saved copy, so the first frame persists the recorded check time.
+    if let Ok(transport) = transport::UreqTransport::with_timeout(Duration::from_secs(15)) {
+        workspace.check_for_update(Arc::new(transport), std::time::SystemTime::now());
+    }
     let control_options = control_socket
         .map(|endpoint| {
             let grants = match control_output.as_deref() {

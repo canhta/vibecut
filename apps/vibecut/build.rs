@@ -1,9 +1,10 @@
-//! Embeds the Windows manifest and icon resource and generates the About dialog's licence list.
+//! Embeds the Windows manifest and icon resource and generates the About dialog's facts: its licence list and build commit.
 use std::{
     collections::BTreeMap,
     error::Error,
     fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -44,7 +45,37 @@ fn main() -> Result<(), Box<dyn Error>> {
     generated.push_str("]\n");
     let out = PathBuf::from(std::env::var("OUT_DIR")?).join("licences.rs");
     fs::write(out, generated)?;
+    commit();
     Ok(())
+}
+
+/// Set `VIBECUT_COMMIT` to the checkout's short HEAD for the About dialog, rerunning when HEAD
+/// or the branch it names moves. Outside a Git checkout the variable stays unset.
+fn commit() {
+    let git = |args: &[&str]| {
+        Command::new("git")
+            .args(args)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .map(|text| text.trim().to_owned())
+            .filter(|text| !text.is_empty())
+    };
+    let Some(sha) = git(&["rev-parse", "--short", "HEAD"]) else {
+        return;
+    };
+    let mut watched = vec!["HEAD".to_owned(), "packed-refs".to_owned()];
+    watched.extend(git(&["symbolic-ref", "-q", "HEAD"]));
+    for name in watched {
+        // A missing path would rerun the script on every build; watch only what exists.
+        if let Some(path) = git(&["rev-parse", "--path-format=absolute", "--git-path", &name])
+            && Path::new(&path).exists()
+        {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
+    println!("cargo:rustc-env=VIBECUT_COMMIT={sha}");
 }
 
 /// Every `.attribution` sidecar under `dir`.

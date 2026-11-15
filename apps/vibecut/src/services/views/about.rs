@@ -6,6 +6,8 @@ use std::sync::OnceLock;
 
 /// The release version, from the workspace package.
 pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The short commit this build was made from (`build.rs`); unset outside a Git checkout.
+pub(crate) const COMMIT: Option<&str> = option_env!("VIBECUT_COMMIT");
 
 /// Terms of use: the project licence text.
 pub(crate) const TERMS_URL: &str = "https://github.com/canhta/vibecut/blob/main/LICENSE";
@@ -170,7 +172,7 @@ fn title_bar(
     }
 }
 
-/// Icon with the version pill at its top right, the name, a divider, the links and the
+/// Icon with the version and build commit pill at its top right, the name, a divider, the links and the
 /// copyright line.
 fn main_page(
     ui: &mut egui::Ui,
@@ -192,7 +194,14 @@ fn main_page(
             egui::Image::new((texture.id(), icon.size())).corner_radius(radius::ABOUT_ICON),
         );
     }
-    let version = i18n::format(locale, Text::AboutVersion, &[("version", VERSION)]);
+    let version = match COMMIT {
+        Some(commit) => i18n::format(
+            locale,
+            Text::AboutBuild,
+            &[("version", VERSION), ("commit", commit)],
+        ),
+        None => i18n::format(locale, Text::AboutVersion, &[("version", VERSION)]),
+    };
     let pill_font = egui::FontId::proportional(type_size::BODY);
     let text_width = ui
         .painter()

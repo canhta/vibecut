@@ -81,7 +81,7 @@ impl App {
     }
     fn busy(&self) -> bool {
         match self {
-            Self::Home { workspace, .. } => workspace.busy(),
+            Self::Home { workspace, .. } => workspace.busy() || workspace.checking_for_update(),
             Self::Editor(_) | Self::Player(_) | Self::Assets(_) => false,
             Self::Shorts(shorts) => shorts.busy(),
         }

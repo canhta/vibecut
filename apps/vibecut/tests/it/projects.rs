@@ -154,8 +154,7 @@ fn home_hosts_the_about_dialog_the_app_menu_opens() {
     harness.state_mut().open_about_on_home(&ctx);
     harness.run_steps(3);
     assert_eq!(harness.query_all(by("app.about.close")).count(), 1);
-    let version = format!("v{}", env!("CARGO_PKG_VERSION"));
-    assert!(harness.query_by_label(&version).is_some());
+    assert!(harness.query_by_label(&crate::about::version()).is_some());
 
     harness.get(by("app.licences")).click();
     harness.run_steps(3);
@@ -166,7 +165,7 @@ fn home_hosts_the_about_dialog_the_app_menu_opens() {
     );
     harness.get(by("app.about")).click();
     harness.run_steps(3);
-    assert!(harness.query_by_label(&version).is_some());
+    assert!(harness.query_by_label(&crate::about::version()).is_some());
 
     harness.get(by("app.about.close")).click();
     harness.run_steps(3);

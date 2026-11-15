@@ -12,6 +12,8 @@ supplies the id and the engine availability predicate; `ActionTarget::Ui { owner
 action }` names an app workflow, including dialogs and the combined app/engine undo
 history.
 
+`recent` keeps the last 16 registry ids `Editor::activate` resolved (ids only, in memory) for the [crash log](../app/startup/README.md#crash-log).
+
 `MENUS` lays out the native menu bar (File, Edit, View, Window, Help) as registry action ids; a row shows the action's chord and runs the same route. Menu chords must include Cmd so a menu never steals plain typing.
 
 Parameterized scene and item ids resolve to a registered family before activation;

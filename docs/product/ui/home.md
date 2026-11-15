@@ -18,6 +18,10 @@ Shot 221432, window origin (56,38), 1728×1030; logical px from the window's top
 - Card surface `#111D20` and window `#071417` are samples only; colours stay ours.
 - Columns fill the available width using these rail and thumbnail values; Library asset-card geometry remains unmeasured.
 
+## Startup notices
+
+A newer release and the last run's crash report share one kit toast (320 px, bottom-right, `toast` tokens), one row each: a wrapped 12 px line and two 22 px icon buttons, View release (`update.open`) or Open crash report folder (`crash.open_folder`) and Dismiss (`update.dismiss`, `crash.dismiss`). Opening dismisses the row. [new]: the reference's update prompt and crash dialog are not captured; behaviour lives in [startup notices](../../../apps/vibecut/src/app/startup/README.md). Audit scene: `home-notices`.
+
 ## Gaps
 
 - Dialogs (rename, info, delete) and hover/pressed states are not captured.

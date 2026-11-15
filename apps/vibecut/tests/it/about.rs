@@ -56,8 +56,12 @@ fn open_from_header_menu(harness: &mut Harness<Editor>) {
     click(harness, "app.about");
 }
 
-fn version() -> String {
-    format!("v{}", env!("CARGO_PKG_VERSION"))
+/// The version pill: the release version and, in a Git checkout, the build commit.
+pub(crate) fn version() -> String {
+    match option_env!("VIBECUT_COMMIT") {
+        Some(commit) => format!("v{} ({commit})", env!("CARGO_PKG_VERSION")),
+        None => format!("v{}", env!("CARGO_PKG_VERSION")),
+    }
 }
 
 #[test]

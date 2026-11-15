@@ -49,6 +49,52 @@ fn home_with(theme: Theme, scale: f32, welcome_seen: bool) -> Result<AppHarness,
     Ok(app)
 }
 
+/// The release a canned repository reports, newer than any build.
+struct NewerRelease;
+impl transport::HttpTransport for NewerRelease {
+    fn send(&self, _: transport::HttpRequest) -> Result<transport::HttpResponse, transport::Error> {
+        Ok(transport::HttpResponse {
+            status: 200,
+            headers: Vec::new(),
+            body: br#"{"tag_name":"v0.2.0"}"#.to_vec(),
+        })
+    }
+}
+
+/// Home's startup toast with both notices: a newer release and the last run's crash report.
+pub(super) fn home_notices(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let directory = tempfile::tempdir()?;
+    vibecut::app::save_crash_report(&directory.path().join("crashes"), "report")?;
+    let mut workspace = Workspace::new(
+        directory.path().join("recovery"),
+        vibecut::preferences::Preferences {
+            welcome_seen: true,
+            ..preferences(theme, Locale::En)
+        },
+        None,
+    )?;
+    workspace.check_for_update(
+        std::sync::Arc::new(NewerRelease),
+        std::time::SystemTime::now(),
+    );
+    let mut app = harness(
+        App::Home {
+            workspace: Box::new(workspace),
+            _directory: directory,
+        },
+        scale,
+    );
+    for _ in 0..500 {
+        app.run_steps(1);
+        if !app.state().busy() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    app.run_steps(2);
+    Ok(app)
+}
+
 /// Home at the measured desktop window size with a full row of projects.
 pub(super) const HOME_WINDOW: [f32; 2] = [1728.0, 1030.0];
 

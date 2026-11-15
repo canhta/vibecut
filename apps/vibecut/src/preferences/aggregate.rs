@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 31;
+pub const PREFERENCES_VERSION: u32 = 32;
 /// Room for every provider/feature choice and its bounded recent IDs.
 pub const MAX_PREFERENCES_BYTES: u64 = 32 * 1024;
 /// Total open-lane entries across every project; keeps the document bounded.
@@ -94,6 +94,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "audio_scrub",
     "export_sound",
     "layout_preset",
+    "update_check",
 ];
 
 /// Media, player and properties widths in px for `columns` px of room: the stored
@@ -266,6 +267,10 @@ pub struct Preferences {
     pub export_sound: bool,
     /// The named editor layout; choosing one also sets `panels`.
     pub layout_preset: super::LayoutPreset,
+    /// Ask the public repository for a newer release at most once a day; on by default.
+    pub update_check: bool,
+    /// When the last release check started, in Unix seconds; app memory, not a setting.
+    pub update_checked_at: Option<u64>,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -320,6 +325,8 @@ impl Default for Preferences {
             audio_scrub: false,
             export_sound: false,
             layout_preset: super::LayoutPreset::default(),
+            update_check: true,
+            update_checked_at: None,
         }
     }
 }
@@ -513,6 +520,7 @@ impl Preferences {
             "audio_scrub" => Ok(serde_json::Value::Bool(self.audio_scrub)),
             "export_sound" => Ok(serde_json::Value::Bool(self.export_sound)),
             "layout_preset" => Ok(serde_json::to_value(self.layout_preset)?),
+            "update_check" => Ok(serde_json::Value::Bool(self.update_check)),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -577,6 +585,7 @@ impl Preferences {
             "audio_scrub" => self.audio_scrub = serde_json::from_value(value)?,
             "export_sound" => self.export_sound = serde_json::from_value(value)?,
             "layout_preset" => self.layout_preset = serde_json::from_value(value)?,
+            "update_check" => self.update_check = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())

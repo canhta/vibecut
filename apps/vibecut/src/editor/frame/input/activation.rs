@@ -18,6 +18,7 @@ impl Editor {
             self.commit_text_edit();
         }
         let (spec, argument) = actions::resolve(id).ok_or(Error::Unsupported("widget action"))?;
+        actions::remember(spec.id);
         if id == "edit.paste" && self.paste_os_files()? {
             return Ok(());
         }
