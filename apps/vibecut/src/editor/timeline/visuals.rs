@@ -267,6 +267,12 @@ impl Media {
         }
     }
 
+    /// Whether this editor's own Clear is running. Its display reads would pin the
+    /// entries the worker is evicting, so they wait for the clear to finish.
+    fn clearing(&self) -> bool {
+        self.cache_worker.is_some() && self.cache_operation == CacheOperation::Clear
+    }
+
     /// Run one display query with the shared caches; `None` while detached.
     fn query<T>(&self, read: impl FnOnce(&mut engine::control::MediaAccess) -> T) -> Option<T> {
         let access = self.access.as_ref()?;
@@ -501,6 +507,9 @@ impl VisualQuery for Media {
         if self.failed.borrow().contains(&key) {
             return StripState::Failed;
         }
+        if self.clearing() {
+            return StripState::Pending;
+        }
         let Some(state) = self.query(|access| {
             access.thumbnail_strip_display(asset, item, visible, pixels_per_second)
         }) else {
@@ -557,6 +566,9 @@ impl VisualQuery for Media {
         let key = VisualKey::Waveform(asset.id());
         if self.failed.borrow().contains(&key) {
             return WaveState::Failed;
+        }
+        if self.clearing() {
+            return WaveState::Pending;
         }
         let Some(state) =
             self.query(|access| access.waveform_display(asset, item, visible, columns))

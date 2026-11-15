@@ -213,6 +213,9 @@ do not consume another attempt.
 The first safe typed cause remains available to Settings. Media owns one panic-catching,
 cancellable joined maintenance thread; it snapshots the shared access under `try_lock`, then
 releases it before IO. Drop cancels and joins; active generation jobs continue unchanged.
+While its own Clear runs, the strip and waveform display queries answer Pending without
+reading the cache: a paint's read pins the entry being evicted, which the clear would keep
+as in use.
 
 Lane menus activate shared Copy/Paste actions, with component-distinct
 `timeline.lane.<item>.<path>.<component>.copy|paste` IDs. The selected item's
