@@ -153,19 +153,19 @@ fn intro(ui: &mut egui::Ui, locale: Locale, clicks: &mut Vec<Click>) {
         egui::pos2(rect.max.x - INTRO_CLOSE, rect.min.y + INTRO_CLOSE),
         egui::Vec2::splat(kit::size::CONTROL),
     );
-    ui.scope_builder(egui::UiBuilder::new().max_rect(close), |ui| {
-        quiet_buttons(ui);
-        let response = kit::icon_button(
-            ui,
-            "brand_kit.intro.close",
-            Icon::X,
-            i18n::text(locale, Text::BrandKitIntroClose),
-            false,
-        );
-        if response.clicked() {
-            clicks.push(Click::CloseIntro);
-        }
-    });
+    // A child ui, not a scope: a scope would move the page's cursor back up to the glyph.
+    let ui = &mut ui.new_child(egui::UiBuilder::new().max_rect(close));
+    quiet_buttons(ui);
+    let response = kit::icon_button(
+        ui,
+        "brand_kit.intro.close",
+        Icon::X,
+        i18n::text(locale, Text::BrandKitIntroClose),
+        false,
+    );
+    if response.clicked() {
+        clicks.push(Click::CloseIntro);
+    }
 }
 
 /// One quiet line under the intro: the store did not open, or the last edit failed.
@@ -447,17 +447,17 @@ fn item_tile(
         ),
         egui::Vec2::splat(kit::size::CONTROL),
     );
-    ui.scope_builder(egui::UiBuilder::new().max_rect(button), |ui| {
-        quiet_buttons(ui);
-        let response = ui
-            .menu_image_button(
-                kit::tinted(Icon::DotsThree, kit::icon::DENSE, kit::text(dark)),
-                menu,
-            )
-            .response
-            .on_hover_text(i18n::text(locale, Text::BrandKitItemMenu));
-        set_author_id(&response, &format!("{prefix}.menu"));
-    });
+    // A child ui, not a scope: a scope would grow the row and shift the next tile down.
+    let ui = &mut ui.new_child(egui::UiBuilder::new().max_rect(button));
+    quiet_buttons(ui);
+    let response = ui
+        .menu_image_button(
+            kit::tinted(Icon::DotsThree, kit::icon::DENSE, kit::text(dark)),
+            menu,
+        )
+        .response
+        .on_hover_text(i18n::text(locale, Text::BrandKitItemMenu));
+    set_author_id(&response, &format!("{prefix}.menu"));
 }
 
 /// The rename dialog and the Fonts chooser, over the page.

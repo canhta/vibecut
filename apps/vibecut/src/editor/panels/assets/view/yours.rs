@@ -2,7 +2,8 @@
 //!
 //! Favorites, My presets and Brand assets share one empty face: a 24 px state glyph, 8 px gap
 //! and one 12 px line centred in the page, with an optional accent link after the line (our
-//! state tokens; the reference's empty faces are not measured to the pixel).
+//! state tokens; the reference's empty faces are not measured to the pixel). A page narrower
+//! than the line wraps it, centred, and puts the link under it.
 mod brand;
 mod favorites;
 
@@ -40,14 +41,36 @@ impl View<'_> {
             theme::secondary(dark),
         );
         let link_galley = link.map(|(label, _)| {
-            ui.painter()
-                .layout_no_wrap(self.tr(label).to_owned(), font, theme::accent(dark))
+            ui.painter().layout_no_wrap(
+                self.tr(label).to_owned(),
+                font.clone(),
+                theme::accent(dark),
+            )
         });
         let width = text.size().x
             + link_galley
                 .as_ref()
                 .map_or(0.0, |galley| theme::space::XS + galley.size().x);
-        let height = theme::icon::STATE + theme::space::MD + text.size().y;
+        // A page narrower than the line and link wraps the line, centred, with the link under it.
+        let reach = (body.width() - 2.0 * theme::space::LG).max(1.0);
+        let fits = width <= reach;
+        let text = if fits {
+            text
+        } else {
+            let mut job = egui::text::LayoutJob::simple(
+                self.tr(line).to_owned(),
+                font,
+                theme::secondary(dark),
+                reach,
+            );
+            job.halign = egui::Align::Center;
+            ui.painter().layout_job(job)
+        };
+        let link_height = match (&link_galley, fits) {
+            (Some(galley), false) => theme::space::XS + galley.size().y,
+            _ => 0.0,
+        };
+        let height = theme::icon::STATE + theme::space::MD + text.size().y + link_height;
         let top = body.center().y - height / 2.0;
         icons::tinted(glyph, theme::icon::STATE, theme::secondary(dark)).paint_at(
             ui,
@@ -56,19 +79,27 @@ impl View<'_> {
                 Vec2::splat(theme::icon::STATE),
             ),
         );
-        let at = egui::pos2(
-            body.center().x - width / 2.0,
-            top + theme::icon::STATE + theme::space::MD,
-        );
+        let line_top = top + theme::icon::STATE + theme::space::MD;
+        let at = if fits {
+            egui::pos2(body.center().x - width / 2.0, line_top)
+        } else {
+            egui::pos2(body.center().x - text.rect.center().x, line_top)
+        };
         let text_width = text.size().x;
+        let text_height = text.size().y;
         ui.painter().galley(at, text, theme::secondary(dark));
         let (Some((label, id)), Some(galley)) = (link, link_galley) else {
             return false;
         };
-        let link_rect = Rect::from_min_size(
-            at + Vec2::new(text_width + theme::space::XS, 0.0),
-            galley.size(),
-        );
+        let link_min = if fits {
+            at + Vec2::new(text_width + theme::space::XS, 0.0)
+        } else {
+            egui::pos2(
+                body.center().x - galley.size().x / 2.0,
+                line_top + text_height + theme::space::XS,
+            )
+        };
+        let link_rect = Rect::from_min_size(link_min, galley.size());
         ui.painter()
             .galley(link_rect.min, galley, theme::accent(dark));
         let response = ui
