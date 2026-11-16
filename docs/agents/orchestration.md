@@ -1,7 +1,5 @@
 # Agent orchestration
 
-Private host facts and tooling live in `.scratch/process/orchestration.md`.
-
 ## Roles
 
 One coordinator session (Claude Opus) on the main checkout owns the queue, dispatch, review, merge, the combined build and the tickets. Workers are Claude Code subagents, one per ticket:
@@ -16,8 +14,8 @@ The coordinator decides technical, design and product questions that the referen
 
 ## Dispatch
 
-- Read the whole ticket first. Set `Status: claimed` and `Assignee`, then start the subagent in its own worktree branched from `origin/main`, in the background.
-- The brief names the ticket path, scope, owners to read, files another live worker owns, and the handback path. The ticket carries the detail; the brief does not restate it.
+- Read the whole ticket first. Comment the claim with the worker model id ([tracker](issue-tracker.md)), then start the subagent in its own worktree branched from `origin/main`, in the background.
+- The brief names the issue number, scope, owners to read, files another live worker owns, and where to hand back. The ticket carries the detail; the brief does not restate it.
 - Keep ready work running by priority ([tracker](issue-tracker.md)). Serialize competing changes to the same behaviour or public contract; independent edits to one file proceed and the coordinator integrates them. Only unmerged code dependencies belong in `Blocked by`.
 - Size follows the working boundary, not line counts. Workers ask only for a new responsibility, dependency or changed contract, never for another path or more lines.
 
@@ -25,7 +23,7 @@ The coordinator decides technical, design and product questions that the referen
 
 Implement through the owners with the [development loop](../engineering/workflows.md#development-loop). Workers do not build or test ([checks](../engineering/verification.md#checks)): code must be compile-clean by reading, with every caller of a changed signature updated in the same commit. Fold new cases as rows into the existing behaviour tests. Commit with a Conventional subject and `git commit -s`, push the branch, never `main`.
 
-Hand back a report under `.scratch/<milestone>/reports/` that starts with `## TL;DR`: branch, head SHA, what is done, what remains, what the combined build must check. Append a dated line to the ticket and end.
+Hand back a comment on the issue that starts with `## TL;DR`: branch, head SHA, what is done, what remains, what the combined build must check. Then end.
 
 ## Review and merge
 

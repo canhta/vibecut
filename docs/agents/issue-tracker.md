@@ -1,31 +1,24 @@
 # Issue tracker
 
-Tickets live in git-ignored `.scratch/` in the coordinator's main checkout: plain files, the single source of truth. `.spikes/` and `.samples/` sit beside it, also git-ignored. Workers read and edit only their assigned ticket files by absolute path and re-read a file before editing it. The coordinator's private tooling lists ready work, ranks unresolved work by what it holds up and serves a read-only board.
+Tickets are GitHub issues on this repository: the single source of truth. Workers read and edit only their assigned issue and re-read it before commenting. `gh issue list` with the labels below lists ready work.
 
-| Path under `.scratch/` | Owns |
+| Ticket fact | Where it lives |
 |---|---|
-| `<milestone>/spec.md` | Scope |
-| `<milestone>/map.md` | One line per decision |
-| `<milestone>/issues/NN-slug.md` | Ticket |
-| `<milestone>/reviews/` | Review reports |
-| `<milestone>/reports/` | Worker handbacks |
+| Status | Open or closed. `blocked` label while a blocker is open or a decision is pending. Closed as completed is resolved; closed as not planned is wontfix, with its reason in a comment |
+| Type | `enhancement` (task), `research`, `bug` |
+| Priority | `P0` to `P4` label |
+| Assignee | A comment naming the worker model id when claimed, for example `claude-haiku-5-5` or `claude-sonnet-5-5`; `human` for the maintainer |
+| Blocked by | A `**Blocked by:**` line in the body listing issue numbers only; put any condition or note in the body text |
+| Scope and acceptance | The body: Problem, Decisions, Must, Ownership, Verify |
+| Worker handback | A comment on the issue ([orchestration](orchestration.md#worker-loop)) |
+| Review report | A comment on the issue or the pull request |
 
-Ticket headers use these exact fields; omit `Blocked by` when empty:
+Claimed means a live worker holds the ticket. A queued but ready ticket is open with no claim comment; one that needs intervention carries `blocked` with the condition in the body. Keep a broad parent open while a leaf is active and close it only after all its acceptance. Record unrun checks as unverified.
 
-```text
-Status: open | claimed | blocked | resolved | wontfix
-Type: task | research | bug
-Priority: P0 | P1 | P2 | P3 | P4
-Assignee: <model id> | human | -
-Blocked by: - | NN, <milestone>/NN
-```
+Record the delivery stage in a comment: **merged unbuilt** (main SHA and what the combined build must check), then close once the combined build is green.
 
-`Assignee` is the worker model id, for example `claude-haiku-5-5` or `claude-sonnet-5-5`; resolved tickets keep their historical values. `Blocked by` holds ticket ids only; put any condition or note in the body.
+Priority follows the [delivery order](../product/requirements.md#scope): P0 foundation, P1 core editor, P2 AI editing and agent control, P3 Home, P4 long video to shorts; a defect takes the priority of the feature it breaks. A ticket is unblocked when every blocker is closed as completed. Put the outcome of a research ticket in a comment headed `## Answer`.
 
-`claimed` means a live worker holds the ticket. A queued but ready ticket is `open`; one that needs intervention is `blocked` with the condition in the body. Keep a broad parent `open` while a leaf is active and resolve it only after all its acceptance. Record unrun checks as unverified.
+Ready order: highest priority, then most open tickets transitively blocked, then lowest number. Claiming, resolving and routing follow [orchestration](orchestration.md).
 
-Record the delivery stage in the body: **merged unbuilt** (main SHA and what the combined build must check), then **resolved** once the combined build is green.
-
-Priority follows the [delivery order](../product/requirements.md#scope): P0 foundation, P1 core editor, P2 AI editing and agent control, P3 Home, P4 long video to shorts; a defect takes the priority of the feature it breaks. Bare numbers mean the same milestone. A ticket is unblocked when every blocker is `resolved`; `wontfix` records its reason. Put the outcome under `## Answer`.
-
-Ready order: highest priority, then most open tickets transitively blocked, then lowest number; a blocking view ranks unresolved tickets by unresolved transitive dependents. Claiming, resolving and routing follow [orchestration](orchestration.md).
+Local experiments, reference captures and sample media are not in the repository. Keep them in git-ignored `.spikes/` and `.samples/` in your own checkout; a ticket that needs one says where the worker gets it.

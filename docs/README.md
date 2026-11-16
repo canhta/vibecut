@@ -20,14 +20,14 @@
 | Domain model, glossary and ADR conventions | [Domain docs](agents/domain.md) | - |
 | Domain term | [Glossary](../GLOSSARY.md) | - |
 | Agent roles, routing, dispatch, review, merge, cleanup | [Orchestration](agents/orchestration.md) | - |
-| Ticket files, header, queries | [Issue tracker](agents/issue-tracker.md) | - |
+| Tickets, labels, queries | [Issue tracker](agents/issue-tracker.md) | - |
 | Build and provisioning detail | [xtask](../xtask/README.md) | workflows.md beyond its summary and link |
 | README media provenance, regeneration and component licences | [README media](assets/readme/README.md) | root README slots beyond the two filled |
 | Why the README demo uses Big Buck Bunny | [ADR 0007](adr/0007-big-buck-bunny-documentation.md) | asset README |
 | Why MIT-0, BSL-1.0, 0BSD, bzip2-1.0.6 and CC0-1.0 dependencies are admitted | [ADR 0008](adr/0008-permissive-dependency-licences.md) | open-source policy, deny.toml |
 | Why a compound clip is a clip whose source is a nested timeline | [ADR 0009](adr/0009-compound-clip.md) | project, render and clip-edit READMEs |
-| Host, worker tooling, ticket state | `.scratch/` and the private workspace | any tracked file |
+| Ticket state | GitHub issues ([Issue tracker](agents/issue-tracker.md)) | any tracked file |
 
 Owner docs state current contracts only, in short sentences. Change a fact at its owner and link to it elsewhere. No history, test inventories or restated code; rationale belongs in ADRs.
 
-The root README shows the finished product to users: features with media, install, links. Status, plans and developer mechanics live in `.scratch/` and CONTRIBUTING.
+The root README shows the finished product to users: features with media, install, links. Status and plans live in GitHub issues; developer mechanics live in CONTRIBUTING.
