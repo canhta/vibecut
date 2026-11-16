@@ -189,7 +189,25 @@ impl Editor {
             if axis == 2 && self.timeline.hidden {
                 continue;
             }
-            let response = ui.interact(area, Id::unique(id), egui::Sense::drag());
+            // The grab zone reaches 3 px into each neighbouring panel, so the
+            // 6-7 px gutter is easy to hit, and the cursor says it can move.
+            let (grab, cursor) = if axis == 2 {
+                (
+                    area.expand2(Vec2::new(0.0, 3.0)),
+                    egui::CursorIcon::ResizeVertical,
+                )
+            } else {
+                (
+                    area.expand2(Vec2::new(3.0, 0.0)),
+                    egui::CursorIcon::ResizeHorizontal,
+                )
+            };
+            let response = ui
+                .interact(grab, Id::unique(id), egui::Sense::drag())
+                .on_hover_cursor(cursor);
+            if response.dragged() {
+                ui.ctx().set_cursor_icon(cursor);
+            }
             self.remember(id, &response);
             if response.drag_started() {
                 self.frame.layout_drag = Some(self.preferences.panels);
