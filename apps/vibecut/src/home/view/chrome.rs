@@ -110,44 +110,13 @@ pub(super) fn rail(ui: &mut egui::Ui, rail: egui::Rect, state: &mut State, local
     }
 }
 
-/// The top band: the open-project icon at the right and, beside it, the
-/// short-video job status when one is running.
-pub(super) fn top_bar(
-    ui: &mut egui::Ui,
-    band: egui::Rect,
-    state: &mut State,
-    locale: Locale,
-    status: Option<Text>,
-) {
+/// The top band: the short-video job status at the right when one is running.
+/// The reference's band holds only utility icons, so no open-file icon sits here.
+pub(super) fn top_bar(ui: &mut egui::Ui, band: egui::Rect, locale: Locale, status: Option<Text>) {
     let dark = ui.visuals().dark_mode;
-    let button = egui::Rect::from_min_size(
-        egui::pos2(
-            band.max.x - 18.0 - kit::size::CONTROL,
-            band.center().y - kit::size::CONTROL / 2.0,
-        ),
-        egui::Vec2::splat(kit::size::CONTROL),
-    );
-    let enabled = !state.busy();
-    let opened = ui
-        .scope_builder(egui::UiBuilder::new().max_rect(button), |ui| {
-            ui.add_enabled_ui(enabled, |ui| {
-                kit::icon_button(
-                    ui,
-                    "project.open",
-                    Icon::FolderOpen,
-                    i18n::text(locale, Text::OpenProject),
-                    false,
-                )
-            })
-            .inner
-        })
-        .inner;
-    if opened.clicked() {
-        state.action = Some(Action::OpenFile);
-    }
     if let Some(status) = status {
         ui.painter().text(
-            egui::pos2(button.min.x - 12.0, button.center().y),
+            egui::pos2(band.max.x - 18.0, band.center().y),
             egui::Align2::RIGHT_CENTER,
             i18n::text(locale, status),
             egui::FontId::proportional(kit::type_size::BODY),

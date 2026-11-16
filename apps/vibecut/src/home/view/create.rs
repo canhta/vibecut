@@ -210,6 +210,8 @@ pub(super) fn agent_card(ui: &mut egui::Ui, state: &mut State, locale: Locale) {
         egui::TextEdit::singleline(&mut state.agent_prompt)
             .hint_text(i18n::text(locale, Text::HomeAgentPlaceholder))
             .char_limit(8 * 1024)
+            .align(egui::Align2::LEFT_CENTER)
+            .min_size(text_rect.size())
             .desired_width(text_rect.width()),
     );
     set_author_id(&edit, "home.agent.input");

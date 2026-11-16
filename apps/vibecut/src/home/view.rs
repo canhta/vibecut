@@ -36,13 +36,10 @@ const TOOL_CARD: [f32; 2] = [242.0, 136.0];
 const AGENT_CARD: [f32; 2] = [380.0, 136.0];
 const BLOCK_GAP: f32 = 20.0;
 const SECTION_GAP: f32 = 64.0;
-/// Project thumbnails: 124 px squares on a 146 px pitch, 5 px in from the page edge.
+/// Project thumbnails are 124 px squares; the minimum gap is 22 px and stretches to fill the page width.
 const THUMB: f32 = 124.0;
 const THUMB_RADIUS: f32 = 6.0;
 const GRID_GAP: f32 = 22.0;
-const GRID_INSET: f32 = 5.0;
-/// The thumbnail row runs 20 px past the banner's right edge.
-const GRID_BLEED: f32 = 20.0;
 const ROW_GAP: f32 = 24.0;
 
 pub(super) fn show(
@@ -59,7 +56,7 @@ pub(super) fn show(
     let page = egui::Rect::from_min_max(egui::pos2(full.min.x + RAIL, full.min.y), full.max);
     let band = egui::Rect::from_min_size(page.min, egui::vec2(page.width(), TOP_BAND));
     chrome::rail(ui, rail, state, locale);
-    chrome::top_bar(ui, band, state, locale, status);
+    chrome::top_bar(ui, band, locale, status);
 
     let body = egui::Rect::from_min_max(egui::pos2(page.min.x, page.min.y + TOP_BAND), page.max);
     let mut body_ui = ui.new_child(

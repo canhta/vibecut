@@ -1,7 +1,7 @@
 //! Draws the Projects section: heading, toolbar and the grid or list of project cards.
 
 use super::{
-    CARD_RADIUS, GRID_BLEED, GRID_GAP, GRID_INSET, ROW_GAP, THUMB, THUMB_RADIUS,
+    CARD_RADIUS, GRID_GAP, ROW_GAP, THUMB, THUMB_RADIUS,
     widgets::{action_button, line, menu_action, quiet_buttons, semibold, set_author_id},
 };
 use crate::{
@@ -141,16 +141,14 @@ pub(super) fn section(
 
 /// The loading face of the grid: one row of card-sized placeholders, named for assistive tools.
 fn skeleton(ui: &mut egui::Ui, label: &str, dark: bool) {
-    let row_width = ui.available_width() + GRID_BLEED;
-    let pitch = THUMB + GRID_GAP;
-    let columns = (((row_width - GRID_INSET + GRID_GAP) / pitch).floor() as usize).max(1);
+    let (row_width, columns, pitch) = grid_columns(ui.available_width());
     let (band, response) = ui.allocate_exact_size(
         egui::vec2(row_width, THUMB + 2.0 + 16.0 + 16.0),
         egui::Sense::hover(),
     );
     let fill = kit::field(dark);
     for column in 0..columns {
-        let left = band.min.x + GRID_INSET + column as f32 * pitch;
+        let left = band.min.x + column as f32 * pitch;
         let thumb =
             egui::Rect::from_min_size(egui::pos2(left, band.min.y), egui::Vec2::splat(THUMB));
         ui.painter().rect_filled(thumb, THUMB_RADIUS, fill);
@@ -441,6 +439,8 @@ fn toolbar(
                     .frame(egui::Frame::NONE)
                     .font(egui::FontId::proportional(kit::type_size::BODY))
                     .hint_text(tr(Text::ProjectsSearch))
+                    .align(egui::Align2::LEFT_CENTER)
+                    .min_size(egui::vec2(0.0, field.height()))
                     .desired_width(SEARCH_WIDTH - 12.0 - 20.0),
             );
             set_author_id(&search, "projects.search");
@@ -607,20 +607,24 @@ fn grid(
     locale: Locale,
     actions: &mut Vec<CardAction>,
 ) {
-    let row_width = ui.available_width() + GRID_BLEED;
-    let pitch = THUMB + GRID_GAP;
-    let columns = (((row_width - GRID_INSET + GRID_GAP) / pitch).floor() as usize).max(1);
+    let (row_width, columns, pitch) = grid_columns(ui.available_width());
     let text_height = 2.0 + 16.0 + 16.0;
-    for row in shown.chunks(columns) {
-        let (band, _) = ui.allocate_exact_size(
-            egui::vec2(row_width, THUMB + text_height),
-            egui::Sense::hover(),
+    // One allocation for the whole grid, rows placed by offset: stacked
+    // per-row allocations drifted upward under the page's centred main axis.
+    let row_height = THUMB + text_height;
+    let rows_count = shown.len().div_ceil(columns);
+    let total = rows_count as f32 * (row_height + ROW_GAP) - ROW_GAP;
+    let (area, _) = ui.allocate_exact_size(egui::vec2(row_width, total), egui::Sense::hover());
+    for (r, row) in shown.chunks(columns).enumerate() {
+        let band = egui::Rect::from_min_size(
+            area.min + egui::vec2(0.0, r as f32 * (row_height + ROW_GAP)),
+            egui::vec2(row_width, row_height),
         );
         for (column, index) in row.iter().enumerate() {
             let Some(entry) = rows(state).get(*index).cloned() else {
                 continue;
             };
-            let left = band.min.x + GRID_INSET + column as f32 * pitch;
+            let left = band.min.x + column as f32 * pitch;
             let thumb =
                 egui::Rect::from_min_size(egui::pos2(left, band.min.y), egui::Vec2::splat(THUMB));
             let texts = egui::Rect::from_min_size(
@@ -641,7 +645,6 @@ fn grid(
                 actions,
             );
         }
-        ui.add_space(ROW_GAP);
     }
 }
 
@@ -1024,4 +1027,17 @@ fn now_unix_ms() -> u64 {
         .ok()
         .and_then(|elapsed| u64::try_from(elapsed.as_millis()).ok())
         .unwrap_or(0)
+}
+
+/// Whole thumbnail columns across the page width, with the gap stretched so the
+/// first thumbnail sits on the heading's left edge and the last on the banner's
+/// right edge. Returns the row width, the column count and the column pitch.
+fn grid_columns(width: f32) -> (f32, usize, f32) {
+    let columns = (((width + GRID_GAP) / (THUMB + GRID_GAP)).floor() as usize).max(1);
+    let gap = if columns > 1 {
+        (width - columns as f32 * THUMB) / (columns - 1) as f32
+    } else {
+        0.0
+    };
+    (width, columns, THUMB + gap)
 }

@@ -43,7 +43,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | HOME-26 | Rename, info, delete dialogs | Done | Not captured | [ui/home.md](../ui/home.md) | |
 | HOME-27 | Multi-select | Done | Not captured | web flows/11 | |
 | HOME-28 | Empty, loading, error states | Done | Proposed | `apps/vibecut/src/home/view/projects.rs` | First run, no results with Clear search, card skeleton while loading; values unmeasured |
-| HOME-29 | Open project from file | Ours | Proposed | `apps/vibecut/src/home/view/chrome.rs` | |
+| HOME-29 | Open project from file | Missing | — | 221432 | Reference band has no open-file icon; removed 2026-11-16, no entry until a shortcut is chosen |
 | HOME-30 | Unreadable project handling | Done | Proposed | smoke 2026-11-14 | Listed apart with reason |
 
 ### Brand kit and onboarding
