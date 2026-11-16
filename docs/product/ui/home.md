@@ -7,7 +7,7 @@ Measured geometry for the Home window. Shared rules, measurement conventions, ty
 Shot 221432, window origin (56,38), 1728×1030; logical px from the window's top-left.
 
 - Rail 240 px wide, rows 176×32 at x=20 on a 44 px pitch (selected row `#162326`, label 12 px/500), rules 1 px and 20 px from the neighbouring rows.
-- Page content x 240–1668 (60 px right margin); top band 44 px with the utility icons at y≈26, 36 px apart.
+- Page content x 240–1668 (60 px right margin); top band 44 px with the utility icons at y≈26, 36 px apart. Ours: no utility icons and a native title bar above, so the band is 24 px and the right margin 44 px, equal to the rail rows' gutter on the left [new].
 - Create banner 1428×144 at y=44 (radius 8), centred 28 px glyph tile and 24 px/600 label.
 - Tool cards 242×136 (agent card 380 wide), 20 px gap, y 208–344, 44 px icon tile at 12 px inset, 13 px title at y+70 and 12 px hint at y+94.
 - Agent prompt card 380×136 (measured on 221432, native / 2): a 18 px glyph and the title in a row at the top left (12 px in), a 20 px headline centred 52 px below the card top, and a 356×40 input 12 px in and 12 px above the bottom with a 24 px send button 10 px from its right edge. Our card follows these values: the title is `Agent`, the headline and placeholder are our words, the send glyph (a caret) and the italic headline face are [new], and the card's gradient fill is not built (`kit::panel`). It sits first in the tool row, with the Shorts card after the 20 px gap. Sending creates a project, opens its editor and starts the agent's first turn with the typed prompt once the consent sheet is accepted.

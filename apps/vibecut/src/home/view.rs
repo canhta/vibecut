@@ -2,7 +2,7 @@
 //!
 //! Geometry is the measured desktop reference at the 1728×1030 window, in
 //! logical px from the window's top-left; the rail starts at x 0, the page
-//! 240 px in, and the banner sits 44 px down.
+//! 240 px in, and the banner sits 24 px down.
 
 mod brand_kit;
 mod chrome;
@@ -26,9 +26,11 @@ const RAIL_PITCH: f32 = 44.0;
 const RAIL_RULE_GAP: f32 = 20.0;
 const ROW_RADIUS: f32 = 6.0;
 /// Top band height; the banner starts below it and rail rows start level with it.
-const TOP_BAND: f32 = 44.0;
-/// The page keeps 60 px to the right of the banner.
-const PAGE_RIGHT: f32 = 60.0;
+/// The reference's 44 px band holds its utility icons; ours holds none and sits under
+/// the native title bar, so it is trimmed to a 24 px breathing gap.
+const TOP_BAND: f32 = 24.0;
+/// The page keeps 44 px to the right of the banner, as the rail rows keep to its left.
+const PAGE_RIGHT: f32 = 44.0;
 const BANNER_HEIGHT: f32 = 144.0;
 const CARD_RADIUS: f32 = 8.0;
 const TOOL_CARD: [f32; 2] = [242.0, 136.0];
