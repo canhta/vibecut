@@ -7,6 +7,7 @@ Tickets are GitHub issues on this repository: the single source of truth. Worker
 | Status | Open or closed. `blocked` label while a blocker is open or a decision is pending. Closed as completed is resolved; closed as not planned is wontfix, with its reason in a comment |
 | Type | `enhancement` (task), `research`, `bug` |
 | Priority | `P0` to `P4` label |
+| Worker model | `model:haiku`, `model:sonnet` or `model:opus` label, set when the ticket is written ([routing](orchestration.md#roles)) |
 | Assignee | A comment naming the worker model id when claimed, for example `claude-haiku-5-5` or `claude-sonnet-5-5`; `human` for the maintainer |
 | Blocked by | A `**Blocked by:**` line in the body listing issue numbers only; put any condition or note in the body text |
 | Scope and acceptance | The body: Problem, Decisions, Must, Ownership, Verify |
