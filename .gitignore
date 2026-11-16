@@ -2,6 +2,7 @@
 /.privates/
 /.samples
 /.scratch
+/.impeccable
 /target/
 .DS_Store
 .env
