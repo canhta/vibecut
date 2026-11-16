@@ -9,3 +9,8 @@ linker = "rust-lld"
 
 [target.aarch64-pc-windows-msvc]
 linker = "rust-lld"
+
+# The dev binaries are large enough that ld overflows its 16MB compact-unwind
+# table and warns; DWARF unwind info alone is fine for a dev build.
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-no_compact_unwind"]
