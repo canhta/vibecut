@@ -112,7 +112,7 @@ Snapshot of main `d3be7568` on 2026-11-14. Legend, evidence names and update rul
 | STICK-09 | Recent list | Ours | Proposed | | |
 | STICK-10 | Shapes cards | Ours | Proposed | [ui/editor.md](../ui/editor.md#generated-shapes) | |
 | STICK-11 | Emoji and icon collections | Ours | Proposed | | |
-| STICK-12 | Logos provider | Missing | — | | Blocked |
+| STICK-12 | Logos provider | Out of scope | — | | Third-party brand marks; users import their own through the brand kit |
 
 ## Templates (TMPL)
 
